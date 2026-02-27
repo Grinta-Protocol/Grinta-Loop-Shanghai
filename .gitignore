@@ -1,3 +1,8 @@
 .env
 node_modules/
 dist/
+target
+.snfoundry_cache/
+snfoundry_trace/
+coverage/
+profile/
