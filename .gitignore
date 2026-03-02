@@ -6,3 +6,6 @@ target
 snfoundry_trace/
 coverage/
 profile/
+.env
+node_modules/
+dist/
