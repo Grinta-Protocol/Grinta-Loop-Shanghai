@@ -1,0 +1,37 @@
+[package]
+name = "grinta"
+version = "0.1.0"
+edition = "2024_07"
+
+[lib]
+sierra = true
+
+[[target.starknet-contract]]
+sierra = true
+
+[dependencies]
+starknet = "2.14.0"
+openzeppelin_token = "1.0.0"
+openzeppelin_access = "1.0.0"
+
+[dev-dependencies]
+snforge_std = "0.53.0"
+assert_macros = "2.14.0"
+
+[scripts]
+test = "snforge test"
+
+[tool.scarb]
+allow-prebuilt-plugins = ["snforge_std"]
+
+[[tool.snforge.fork]]
+name = "mainnet"
+url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/A_aQEk8ItXSiyZveFp_6y"
+block_id.tag = "latest"
+
+[workspace]
+members = ["scripts"]
+
+[tool.fmt]
+sort-module-level-items = true
+max-line-length = 120
