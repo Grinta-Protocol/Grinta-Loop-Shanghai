@@ -458,4 +458,35 @@ pub mod SAFEEngine {
             true
         }
     }
+
+    // ========================================================================
+    // camelCase ERC20 wrappers (required by Argent X / Braavos wallet detection)
+    // ========================================================================
+
+    #[abi(embed_v0)]
+    impl GritERC20CamelImpl of grinta::interfaces::ierc20::IERC20Camel<ContractState> {
+        fn totalSupply(self: @ContractState) -> u256 {
+            self.grit_total_supply.read()
+        }
+
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+            self.grit_balances.read(account)
+        }
+
+        fn transferFrom(
+            ref self: ContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+        ) -> bool {
+            let caller = get_caller_address();
+            let allowed = self.grit_allowances.read((sender, caller));
+            assert(allowed >= amount, 'GRIT: insufficient allowance');
+            self.grit_allowances.write((sender, caller), allowed - amount);
+            let sender_bal = self.grit_balances.read(sender);
+            assert(sender_bal >= amount, 'GRIT: insufficient balance');
+            self.grit_balances.write(sender, sender_bal - amount);
+            let recipient_bal = self.grit_balances.read(recipient);
+            self.grit_balances.write(recipient, recipient_bal + amount);
+            self.emit(Transfer { from: sender, to: recipient, value: amount });
+            true
+        }
+    }
 }
