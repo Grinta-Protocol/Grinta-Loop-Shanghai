@@ -1,6 +1,22 @@
 use grinta_scripts::addresses;
 use sncast_std::{FeeSettingsTrait, invoke};
 use starknet::ContractAddress;
+use grinta::types_ekubo::{PoolKey, i129};
+
+/// Bounds for liquidity position (lower and upper ticks)
+#[derive(Drop, Copy, Serde)]
+struct Bounds {
+    lower: i129,   // Lower tick bound
+    upper: i129,   // Upper tick bound
+}
+
+/// Position update parameters for Ekubo
+#[derive(Drop, Copy, Serde)]
+struct UpdatePositionParameters {
+    salt: u128,              // Unique salt for position identification
+    bounds: Bounds,          // Tick bounds for liquidity range
+    liquidity_delta: i129,   // Liquidity to add (positive) or remove (negative)
+}
 
 /// Main entry point for adding liquidity to GRIT/USDC pool on Sepolia
 fn main() {
@@ -64,9 +80,12 @@ fn main() {
         .expect('USDC approval failed');
     
     // =========================================================================
-    // Step 3: Construct and use pool key for update_position
+    // Step 3: Construct pool key and position parameters
     // =========================================================================
-    // Note: Full implementation of update_position would require proper
-    // Ekubo ABI structures. For now, approvals are the key step that
-    // allows the liquidity provision to proceed.
+    // After approvals are complete, liquidity can be added via:
+    // ekubo_core.update_position(pool_key, position_params)
+    // 
+    // Note: The exact fee and pool parameters depend on the pool's
+    // initialization state on Ekubo. Pool initialization may have
+    // already occurred or may be triggered by the first update_position call.
 }
