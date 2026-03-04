@@ -48,6 +48,7 @@ fn main() {
         safe_engine,
         pid_controller,
         addresses::EKUBO_ORACLE,
+        addresses::EKUBO_CORE,
         safe_engine,     // grit_token = SAFEEngine address (it implements ERC20)
         mock_wbtc,       // wbtc_token
         addresses::USDC, // usdc quote token
@@ -55,11 +56,11 @@ fn main() {
     println!("   GrintaHook: {}", grinta_hook);
 
     // =========================================================================
-    // 6. Deploy SafeManager (user/agent facing)
+    // 6. Deploy SafeManager (user/agent facing, with hook for keeper-less updates)
     // =========================================================================
     println!("6. Deploying SafeManager...");
     let safe_manager: ContractAddress = deploy_helpers::deploy_safe_manager(
-        admin, safe_engine, collateral_join,
+        admin, safe_engine, collateral_join, grinta_hook,
     );
     println!("   SafeManager: {}", safe_manager);
 

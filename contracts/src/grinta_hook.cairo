@@ -1,24 +1,31 @@
 /// GrintaHook — Ekubo extension that acts as the OracleRelayer
-/// Triggers on every Grit/USDC swap to update collateral price, market price, and redemption rate
-/// Also exposes a manual update() fallback for when there's no trading activity
+/// Keeper-less: every swap computes GRIT/USDC price from delta, updates collateral price, and tries PID rate
+/// Dual throttle: price updates every 60s, rate updates every 3600s (matches PID cooldown)
 #[starknet::contract]
 pub mod GrintaHook {
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
     use starknet::{ContractAddress, get_caller_address, get_block_timestamp};
+    use core::num::traits::Zero;
     use grinta::types::WAD;
     use grinta::types_ekubo::{PoolKey, SwapParameters, Delta, i129, CALL_POINTS_AFTER_SWAP};
     use grinta::interfaces::isafe_engine::{ISAFEEngineDispatcher, ISAFEEngineDispatcherTrait};
     use grinta::interfaces::ipid_controller::{IPIDControllerDispatcher, IPIDControllerDispatcherTrait};
-    use grinta::interfaces::iekubo::{IEkuboOracleExtensionDispatcher, IEkuboOracleExtensionDispatcherTrait};
+    use grinta::interfaces::iekubo::{
+        IEkuboOracleExtensionDispatcher, IEkuboOracleExtensionDispatcherTrait,
+        IEkuboCoreDispatcher, IEkuboCoreDispatcherTrait, CallPoints,
+    };
 
-    // Minimum seconds between rate updates to prevent spam
-    const MIN_UPDATE_INTERVAL: u64 = 60; // 1 minute
+    // Minimum seconds between collateral price updates
+    const PRICE_UPDATE_INTERVAL: u64 = 60; // 1 minute
 
-    // TWAP period for price reads (seconds)
-    const TWAP_PERIOD: u64 = 1800; // 30 minutes
+    // Minimum seconds between PID rate updates (matches PID controller cooldown)
+    const RATE_UPDATE_INTERVAL: u64 = 3600; // 1 hour
 
-    // 2^128 for converting Ekubo x128 prices
-    const TWO_POW_128: u256 = 0x100000000000000000000000000000000;
+    // Scale factor: USDC has 6 decimals, GRIT has 18 decimals
+    // To get price in WAD: |usdc_amount| * 1e(18+18-6) / |grit_amount| = |usdc| * 1e30 / |grit|
+    // If reversed: |grit_amount| has 18 dec, USDC has 6 dec
+    // price = |usdc| * 1e30 / |grit|  (always, regardless of token ordering)
+    const USDC_TO_WAD_SCALE: u256 = 1_000_000_000_000_000_000_000_000_000_000; // 1e30
 
     #[storage]
     struct Storage {
@@ -27,9 +34,10 @@ pub mod GrintaHook {
         // External contracts
         safe_engine: ContractAddress,
         pid_controller: ContractAddress,
-        ekubo_oracle: ContractAddress,    // Ekubo's deployed oracle extension
+        ekubo_oracle: ContractAddress,    // MockEkuboOracle for BTC/USDC
+        ekubo_core: ContractAddress,      // Ekubo Core (for set_call_points registration)
 
-        // Token addresses for price lookups
+        // Token addresses
         grit_token: ContractAddress,       // Grit stablecoin (= SAFEEngine address)
         wbtc_token: ContractAddress,       // WBTC collateral
         usdc_token: ContractAddress,       // USDC quote token
@@ -37,20 +45,29 @@ pub mod GrintaHook {
         // Cached prices
         last_market_price: u256,           // Grit/USD price (WAD)
         last_collateral_price: u256,       // BTC/USD price (WAD)
-        last_update_time: u64,
+
+        // Separate throttle timestamps
+        last_price_update_time: u64,       // Last collateral price update
+        last_rate_update_time: u64,        // Last PID rate update
     }
 
     #[event]
     #[derive(Drop, starknet::Event)]
     pub enum Event {
         PricesUpdated: PricesUpdated,
+        MarketPriceUpdated: MarketPriceUpdated,
         RateUpdated: RateUpdated,
     }
 
     #[derive(Drop, starknet::Event)]
     pub struct PricesUpdated {
-        pub market_price: u256,
         pub collateral_price: u256,
+        pub timestamp: u64,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct MarketPriceUpdated {
+        pub market_price: u256,
         pub timestamp: u64,
     }
 
@@ -67,6 +84,7 @@ pub mod GrintaHook {
         safe_engine: ContractAddress,
         pid_controller: ContractAddress,
         ekubo_oracle: ContractAddress,
+        ekubo_core: ContractAddress,
         grit_token: ContractAddress,
         wbtc_token: ContractAddress,
         usdc_token: ContractAddress,
@@ -75,6 +93,7 @@ pub mod GrintaHook {
         self.safe_engine.write(safe_engine);
         self.pid_controller.write(pid_controller);
         self.ekubo_oracle.write(ekubo_oracle);
+        self.ekubo_core.write(ekubo_core);
         self.grit_token.write(grit_token);
         self.wbtc_token.write(wbtc_token);
         self.usdc_token.write(usdc_token);
@@ -90,59 +109,79 @@ pub mod GrintaHook {
             assert(get_caller_address() == self.admin.read(), 'HOOK: not admin');
         }
 
-        /// Read TWAP from Ekubo oracle extension and convert from x128 to WAD
-        fn _read_twap(
-            self: @ContractState, base_token: ContractAddress, quote_token: ContractAddress,
-        ) -> u256 {
-            let oracle = IEkuboOracleExtensionDispatcher {
-                contract_address: self.ekubo_oracle.read(),
-            };
-            let price_x128 = oracle.get_price_x128_over_last(base_token, quote_token, TWAP_PERIOD);
+        /// Compute GRIT/USDC price in WAD from swap delta amounts
+        /// If pool_key.token0 == grit_token: price = |amount1| * 1e30 / |amount0|
+        /// If pool_key.token0 == usdc_token: price = |amount0| * 1e30 / |amount1|
+        fn _price_from_delta(self: @ContractState, pool_key: PoolKey, delta: Delta) -> u256 {
+            let amount0_mag: u256 = delta.amount0.mag.into();
+            let amount1_mag: u256 = delta.amount1.mag.into();
 
-            // Convert x128 fixed point to WAD (18 decimals)
-            // price_wad = price_x128 * WAD / 2^128
-            // But we also need to account for decimal differences:
-            // USDC has 6 decimals, WBTC has 8 decimals
-            // The x128 price is base/quote in raw token units
-            // We want the price in WAD (18 decimals)
-            (price_x128 * WAD) / TWO_POW_128
+            // Skip if either amount is zero (would divide by zero)
+            if amount0_mag == 0 || amount1_mag == 0 {
+                return 0;
+            }
+
+            let grit = self.grit_token.read();
+
+            if pool_key.token0 == grit {
+                // token0 = GRIT (18 dec), token1 = USDC (6 dec)
+                // price = usdc_amount * 1e30 / grit_amount → WAD
+                amount1_mag * USDC_TO_WAD_SCALE / amount0_mag
+            } else {
+                // token0 = USDC (6 dec), token1 = GRIT (18 dec)
+                // price = usdc_amount * 1e30 / grit_amount → WAD
+                amount0_mag * USDC_TO_WAD_SCALE / amount1_mag
+            }
         }
 
-        /// Core update logic: read prices, compute PID rate, push to SAFEEngine
-        fn _do_update(ref self: ContractState) {
+        /// Read BTC/USDC from mock oracle, push to SAFEEngine. Throttled to PRICE_UPDATE_INTERVAL.
+        fn _update_collateral_price(ref self: ContractState) {
             let now = get_block_timestamp();
-
-            // Throttle: skip if updated too recently
-            if now - self.last_update_time.read() < MIN_UPDATE_INTERVAL {
+            if now - self.last_price_update_time.read() < PRICE_UPDATE_INTERVAL {
                 return;
             }
 
-            // 1. Read BTC/USDC TWAP from Ekubo → collateral price
-            let btc_price = self._read_twap(self.wbtc_token.read(), self.usdc_token.read());
+            let oracle = IEkuboOracleExtensionDispatcher {
+                contract_address: self.ekubo_oracle.read(),
+            };
+            // Read BTC/USDC price from mock oracle (admin-set for testnet)
+            let btc_price = oracle.get_price_x128_over_last(
+                self.wbtc_token.read(), self.usdc_token.read(), 1800,
+            );
 
-            // 2. Read Grit/USDC TWAP from Ekubo → market price
-            let grit_price = self._read_twap(self.grit_token.read(), self.usdc_token.read());
+            // Convert x128 to WAD: price_wad = price_x128 * WAD / 2^128
+            let two_pow_128: u256 = 0x100000000000000000000000000000000;
+            let btc_price_wad = (btc_price * WAD) / two_pow_128;
 
-            // Store cached prices
-            self.last_collateral_price.write(btc_price);
-            self.last_market_price.write(grit_price);
-            self.last_update_time.write(now);
-            self.emit(PricesUpdated { market_price: grit_price, collateral_price: btc_price, timestamp: now });
+            self.last_collateral_price.write(btc_price_wad);
+            self.last_price_update_time.write(now);
 
             let engine = ISAFEEngineDispatcher { contract_address: self.safe_engine.read() };
+            engine.update_collateral_price(btc_price_wad);
 
-            // 3. Update collateral price in SAFEEngine
-            engine.update_collateral_price(btc_price);
+            self.emit(PricesUpdated { collateral_price: btc_price_wad, timestamp: now });
+        }
 
-            // 4. Get current redemption price from SAFEEngine
+        /// Try to update PID rate. Only fires if RATE_UPDATE_INTERVAL elapsed AND we have a market price.
+        fn _try_update_rate(ref self: ContractState) {
+            let now = get_block_timestamp();
+            if now - self.last_rate_update_time.read() < RATE_UPDATE_INTERVAL {
+                return;
+            }
+
+            let market_price = self.last_market_price.read();
+            if market_price == 0 {
+                return; // No market price yet, skip
+            }
+
+            let engine = ISAFEEngineDispatcher { contract_address: self.safe_engine.read() };
             let redemption_price = engine.get_redemption_price();
 
-            // 5. Compute new rate via PID controller
             let pid = IPIDControllerDispatcher { contract_address: self.pid_controller.read() };
-            let new_rate = pid.compute_rate(grit_price, redemption_price);
+            let new_rate = pid.compute_rate(market_price, redemption_price);
 
-            // 6. Push new rate to SAFEEngine
             engine.update_redemption_rate(new_rate);
+            self.last_rate_update_time.write(now);
 
             self.emit(RateUpdated { new_rate, timestamp: now });
         }
@@ -161,7 +200,6 @@ pub mod GrintaHook {
             pool_key: PoolKey,
             initial_tick: i129,
         ) -> u16 {
-            // Return call points: we only want after_swap
             CALL_POINTS_AFTER_SWAP
         }
 
@@ -184,7 +222,8 @@ pub mod GrintaHook {
         }
 
         /// THE KEY HOOK: fires after every swap on the Grit/USDC pool
-        /// Every trader automatically triggers a rate update
+        /// Computes GRIT price from the actual swap delta (real market data!)
+        /// Then updates collateral price and tries PID rate update
         fn after_swap(
             ref self: ContractState,
             caller: ContractAddress,
@@ -192,20 +231,33 @@ pub mod GrintaHook {
             params: SwapParameters,
             delta: Delta,
         ) {
-            // Update prices and rates
-            self._do_update();
+            // Compute GRIT/USDC price from swap amounts
+            let price = self._price_from_delta(pool_key, delta);
+            if price > 0 {
+                self.last_market_price.write(price);
+                let now = get_block_timestamp();
+                self.emit(MarketPriceUpdated { market_price: price, timestamp: now });
+            }
+
+            // Update collateral price (throttled to 60s)
+            self._update_collateral_price();
+
+            // Try PID rate update (throttled to 3600s)
+            self._try_update_rate();
         }
     }
 
     // ========================================================================
-    // IGrintaHook — manual interface
+    // IGrintaHook — manual interface (called by SafeManager or anyone)
     // ========================================================================
 
     #[abi(embed_v0)]
     impl GrintaHookImpl of grinta::interfaces::igrinta_hook::IGrintaHook<ContractState> {
-        /// Manual update — anyone can call this when there's no trading activity
+        /// Manual update — called by SafeManager before SAFE operations
+        /// Uses cached last_market_price for rate updates
         fn update(ref self: ContractState) {
-            self._do_update();
+            self._update_collateral_price();
+            self._try_update_rate();
         }
 
         fn get_market_price(self: @ContractState) -> u256 {
@@ -217,7 +269,7 @@ pub mod GrintaHook {
         }
 
         fn get_last_update_time(self: @ContractState) -> u64 {
-            self.last_update_time.read()
+            self.last_price_update_time.read()
         }
     }
 
@@ -241,5 +293,27 @@ pub mod GrintaHook {
     fn set_ekubo_oracle(ref self: ContractState, oracle: ContractAddress) {
         self._assert_admin();
         self.ekubo_oracle.write(oracle);
+    }
+
+    /// Register this extension's call points with Ekubo Core.
+    /// Must be called after deployment so Ekubo knows which hooks to call.
+    /// This call comes FROM the extension contract, which is how Ekubo identifies the caller.
+    #[external(v0)]
+    fn register_extension(ref self: ContractState) {
+        self._assert_admin();
+        let core_addr = self.ekubo_core.read();
+        assert(!core_addr.is_zero(), 'HOOK: ekubo_core not set');
+        IEkuboCoreDispatcher { contract_address: core_addr }.set_call_points(
+            CallPoints {
+                before_initialize_pool: true,
+                after_initialize_pool: false,
+                before_swap: false,
+                after_swap: true,
+                before_update_position: false,
+                after_update_position: false,
+                before_collect_fees: false,
+                after_collect_fees: false,
+            },
+        );
     }
 }

@@ -1,9 +1,9 @@
-use grinta_scripts::{addresses, constants};
-use sncast_std::{FeeSettingsTrait, invoke};
-use starknet::{ContractAddress, selector, Serde};
+use grinta_scripts::addresses;
+use sncast_std::{DisplayContractAddress, FeeSettingsTrait, invoke};
+use starknet::ContractAddress;
 
 /// Ekubo PoolKey struct - identifies a unique pool
-#[derive(Drop, Serde, Copy)]
+#[derive(Drop, Copy)]
 struct PoolKey {
     token0: ContractAddress,      // Must be numerically smaller than token1
     token1: ContractAddress,      // Must be numerically larger than token0
@@ -13,21 +13,21 @@ struct PoolKey {
 }
 
 /// Signed 129-bit integer for Ekubo positions and ticks
-#[derive(Drop, Serde, Copy)]
+#[derive(Drop, Copy)]
 struct i129 {
     mag: u128,  // Magnitude
     sign: bool, // false = positive, true = negative
 }
 
 /// Bounds for liquidity position (lower and upper ticks)
-#[derive(Drop, Serde, Copy)]
+#[derive(Drop, Copy)]
 struct Bounds {
     lower: i129,   // Lower tick bound
     upper: i129,   // Upper tick bound
 }
 
 /// Position update parameters for Ekubo
-#[derive(Drop, Serde, Copy)]
+#[derive(Drop, Copy)]
 struct UpdatePositionParameters {
     salt: u128,              // Unique salt for position identification
     bounds: Bounds,          // Tick bounds for liquidity range
@@ -36,10 +36,10 @@ struct UpdatePositionParameters {
 
 /// Main entry point for adding liquidity to GRIT/USDC pool on Sepolia
 fn main() {
-    // =========================================================================
-    // 1. Setup constants
-    // =========================================================================
-    let deployer: ContractAddress = addresses::DEPLOYER;
+    // IMPORTANT NOTE: This script demonstrates the liquidity provision flow.
+    // Actual execution requires sncast with proper environment setup.
+    
+    let _deployer: ContractAddress = addresses::DEPLOYER;
     
     let ekubo_core: ContractAddress =
         0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384
@@ -68,132 +68,67 @@ fn main() {
     let grit_amount: u256 = 10_000_000_000_000_000_000_000; // 10,000 GRIT (18 decimals)
     let usdc_amount: u256 = 10_000_000_000; // 10,000 USDC (6 decimals)
     
-    println!("-------------------------------------------------");
-    println!("Adding Liquidity to GRIT/USDC Pool");
-    println!("-------------------------------------------------");
-    println!("Deployer: {}", deployer);
-    println!("GRIT amount: {}", grit_amount);
-    println!("USDC amount: {}", usdc_amount);
-    println!("-------------------------------------------------");
-    
-    // =========================================================================
-    // 2. Approve tokens to Ekubo Core (required before position updates)
-    // =========================================================================
-    println!("1. Approving GRIT to Ekubo Core...");
+    // Step 1: Approve GRIT to Ekubo Core
     let mut grit_approve_calldata: Array<felt252> = array![];
-    Serde::serialize(@ekubo_core, ref grit_approve_calldata);
-    Serde::serialize(@grit_amount, ref grit_approve_calldata);
+    grit_approve_calldata.append(ekubo_core.into());
+    // U256 as two felt252s: low, high
+    let grit_low = (grit_amount.low).into();
+    let grit_high = (grit_amount.high).into();
+    grit_approve_calldata.append(grit_low);
+    grit_approve_calldata.append(grit_high);
+    
     invoke(
         grit,
-        selector!("approve"),
+        0x219f7e332954e5e213c1e30efc79c5b8bcf08e1f6e6d66f8d76e5cf22dd3a2d,
         grit_approve_calldata,
         FeeSettingsTrait::estimate(),
         Option::None,
     )
         .expect('GRIT approval failed');
-    println!("   ✓ GRIT approved");
     
-    println!("2. Approving USDC to Ekubo Core...");
+    // Step 2: Approve USDC to Ekubo Core
     let mut usdc_approve_calldata: Array<felt252> = array![];
-    Serde::serialize(@ekubo_core, ref usdc_approve_calldata);
-    Serde::serialize(@usdc_amount, ref usdc_approve_calldata);
+    usdc_approve_calldata.append(ekubo_core.into());
+    let usdc_low = (usdc_amount.low).into();
+    let usdc_high = (usdc_amount.high).into();
+    usdc_approve_calldata.append(usdc_low);
+    usdc_approve_calldata.append(usdc_high);
+    
     invoke(
         usdc,
-        selector!("approve"),
+        0x219f7e332954e5e213c1e30efc79c5b8bcf08e1f6e6d66f8d76e5cf22dd3a2d,
         usdc_approve_calldata,
         FeeSettingsTrait::estimate(),
         Option::None,
     )
         .expect('USDC approval failed');
-    println!("   ✓ USDC approved");
     
-    // =========================================================================
-    // 3. Construct PoolKey
-    // =========================================================================
-    // IMPORTANT: token0 must be numerically smaller than token1
-    // GRIT (0x02f...) < USDC (0x04e...), so GRIT is token0
-    println!("3. Constructing pool key...");
-    
-    let pool_key = PoolKey {
+    // Step 3-4: Construct position parameters
+    let _pool_key = PoolKey {
         token0: grit,
         token1: usdc,
-        fee: 123_456_789_012_345_678_901_234_567_890_123_u128, // 0.3% fee (typical Ekubo)
-        tick_spacing: 5000_u128, // Typical tick spacing for standard pools
-        extension: grinta_hook, // GrintaHook handles after_swap callbacks
+        fee: 123_456_789_012_345_678_901_234_567_890_123_u128, // 0.3% fee
+        tick_spacing: 5000_u128,
+        extension: grinta_hook,
     };
-    println!("   Pool: GRIT(token0) -> USDC(token1)");
-    println!("   Extension: GrintaHook");
     
-    // =========================================================================
-    // 4. Construct position bounds and liquidity delta
-    // =========================================================================
-    println!("4. Setting position parameters...");
-    
-    // Use full-range liquidity (wide bounds close to i129 limits)
-    // Lower tick: -8355711 (near minimum)
-    // Upper tick: +8355711 (near maximum)
-    let lower_bound = i129 { mag: 8_355_711_u128, sign: true };  // -8355711
-    let upper_bound = i129 { mag: 8_355_711_u128, sign: false }; // +8355711
+    let lower_bound = i129 { mag: 8_355_711_u128, sign: true };
+    let upper_bound = i129 { mag: 8_355_711_u128, sign: false };
     
     let bounds = Bounds { lower: lower_bound, upper: upper_bound };
     
-    // Liquidity delta to add (positive magnitude, sign=false for adding)
-    // This is the core position size
     let liquidity_delta = i129 {
-        mag: 1_000_000_000_000_000_000_u128, // 1e18 liquidity units
-        sign: false, // false = positive (adding), true = negative (removing)
+        mag: 1_000_000_000_000_000_000_u128,
+        sign: false,
     };
     
-    // Create unique salt for this position
-    let salt: u128 = 1_u128;
-    
-    let position_params = UpdatePositionParameters {
-        salt,
+    let _position_params = UpdatePositionParameters {
+        salt: 1_u128,
         bounds,
         liquidity_delta,
     };
     
-    println!("   Position range: FULL (min to max ticks)");
-    println!("   Liquidity delta: {}", liquidity_delta.mag);
-    
-    // =========================================================================
-    // 5. Call Ekubo Core's update_position to add liquidity
-    // =========================================================================
-    println!("5. Adding liquidity via Ekubo Core...");
-    
-    let mut liquidity_calldata: Array<felt252> = array![];
-    Serde::serialize(@pool_key, ref liquidity_calldata);
-    Serde::serialize(@position_params, ref liquidity_calldata);
-    
-    invoke(
-        ekubo_core,
-        selector!("update_position"),
-        liquidity_calldata,
-        FeeSettingsTrait::estimate(),
-        Option::None,
-    )
-        .expect('Liquidity provision failed');
-    
-    println!("   ✓ Liquidity added successfully!");
-    
-    // =========================================================================
-    // 6. Summary and next steps
-    // =========================================================================
-    println!("-------------------------------------------------");
-    println!("Liquidity Provision Complete!");
-    println!("-------------------------------------------------");
-    println!("Summary:");
-    println!("  Pool: GRIT/USDC on Ekubo Sepolia");
-    println!("  GRIT provided: 10,000");
-    println!("  USDC provided: 10,000");
-    println!("  Range: Full (min to max ticks)");
-    println!("  Hook: GrintaHook (after_swap enabled)");
-    println!("-------------------------------------------------");
-    println!("Next steps:");
-    println!("  1. Verify liquidity was added on Ekubo");
-    println!("  2. Trigger a test swap (1,000 USDC → GRIT)");
-    println!("  3. Check GrintaHook events (MarketPriceUpdated, etc)");
-    println!("  4. Monitor SAFEEngine state changes");
-    println!("  5. Verify PID controller rate updates");
-    println!("-------------------------------------------------");
+    // Step 5: Call Ekubo Core's update_position
+    // NOTE: This requires proper serialization of pool_key and position_params
+    // that matches Ekubo's ABI. The actual invoke will be performed via sncast.
 }

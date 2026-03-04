@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "cairo-coder": {
+      "command": "npx",
+      "args": ["-y", "@kasarlabs/cairo-coder-mcp"],
+      "env": {
+        "CAIRO_CODER_API_KEY": "66b47bd5e7194d74edec88cf49db66e43b5e9c8ea287ca8d321625b276f13a85"
+      }
+    },
+    "OpenZeppelinCairoContracts": {
+      "type": "http",
+      "url": "https://mcp.openzeppelin.com/contracts/cairo/mcp"
+    }
+  }
+}

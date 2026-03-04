@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "cairo-coder": {
+      "type": "local",
+      "command": ["npx", "-y", "@kasarlabs/cairo-coder-mcp"],
+      "environment": {
+        "CAIRO_CODER_API_KEY": "66b47bd5e7194d74edec88cf49db66e43b5e9c8ea287ca8d321625b276f13a85"
+      },
+      "enabled": true
+    },
+    "openzeppelin-cairo": {
+      "type": "remote",
+      "url": "https://mcp.openzeppelin.com/contracts/cairo/mcp",
+      "enabled": true
+    }
+  }
+}

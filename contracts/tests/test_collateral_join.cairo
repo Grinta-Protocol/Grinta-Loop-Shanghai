@@ -23,7 +23,8 @@ fn setup() -> (
     let (wbtc_addr, wbtc) = deploy_mock_wbtc();
     let (safe_engine_addr, safe_engine) = deploy_safe_engine(admin_addr);
     let (join_addr, join) = deploy_collateral_join(admin_addr, wbtc_addr, safe_engine_addr);
-    let (manager_addr, _manager) = deploy_safe_manager(admin_addr, safe_engine_addr, join_addr);
+    let zero_hook: starknet::ContractAddress = 0.try_into().unwrap();
+    let (manager_addr, _manager) = deploy_safe_manager(admin_addr, safe_engine_addr, join_addr, zero_hook);
 
     // Set safe_manager on CollateralJoin
     let join_admin = IJoinSetManagerDispatcher { contract_address: join_addr };

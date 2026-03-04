@@ -60,3 +60,13 @@ pub fn btc_initial_price() -> u256 {
 pub fn wbtc_mint_amount() -> u256 {
     1_000_000_000 // 10 * 1e8
 }
+
+/// Mint 20 WBTC to deployer for upgrade: 20 * 10^8 satoshis
+pub fn wbtc_upgrade_mint_amount() -> u256 {
+    2_000_000_000 // 20 * 1e8
+}
+
+/// Mint 10,000 MockUSDC to deployer: 10,000 * 10^6
+pub fn usdc_mint_amount() -> u256 {
+    10_000_000_000 // 10_000 * 1e6
+}

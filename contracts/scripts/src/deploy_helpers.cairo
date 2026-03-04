@@ -110,11 +110,13 @@ pub fn deploy_pid_controller(
 }
 
 /// Deploy GrintaHook — Ekubo extension that acts as OracleRelayer
+/// Registers itself with Ekubo Core via set_call_points in the constructor
 pub fn deploy_grinta_hook(
     admin: ContractAddress,
     safe_engine: ContractAddress,
     pid_controller: ContractAddress,
     ekubo_oracle: ContractAddress,
+    ekubo_core: ContractAddress,
     grit_token: ContractAddress,
     wbtc_token: ContractAddress,
     usdc_token: ContractAddress,
@@ -127,6 +129,7 @@ pub fn deploy_grinta_hook(
     Serde::serialize(@safe_engine, ref calldata);
     Serde::serialize(@pid_controller, ref calldata);
     Serde::serialize(@ekubo_oracle, ref calldata);
+    Serde::serialize(@ekubo_core, ref calldata);
     Serde::serialize(@grit_token, ref calldata);
     Serde::serialize(@wbtc_token, ref calldata);
     Serde::serialize(@usdc_token, ref calldata);
@@ -139,11 +142,33 @@ pub fn deploy_grinta_hook(
     result.contract_address
 }
 
+/// Deploy MockUSDC (ERC20Mintable) — anyone can mint, 6 decimals
+pub fn deploy_mock_usdc() -> ContractAddress {
+    let decl = declare("ERC20Mintable", fee(), Option::None)
+        .expect('ERC20Mintable declare fail');
+
+    let mut calldata: Array<felt252> = array![];
+    let name: ByteArray = "Mock USDC";
+    let symbol: ByteArray = "mUSDC";
+    let decimals: u8 = 6;
+    Serde::serialize(@name, ref calldata);
+    Serde::serialize(@symbol, ref calldata);
+    Serde::serialize(@decimals, ref calldata);
+
+    let result = deploy(
+        *decl.class_hash(), calldata, Option::None, true, fee(), Option::None,
+    )
+        .expect('MockUSDC deploy fail');
+
+    result.contract_address
+}
+
 /// Deploy SafeManager — user/agent facing safe operations
 pub fn deploy_safe_manager(
     admin: ContractAddress,
     safe_engine: ContractAddress,
     collateral_join: ContractAddress,
+    hook: ContractAddress,
 ) -> ContractAddress {
     let decl = declare("SafeManager", fee(), Option::None)
         .expect('SafeManager declare fail');
@@ -152,6 +177,7 @@ pub fn deploy_safe_manager(
     Serde::serialize(@admin, ref calldata);
     Serde::serialize(@safe_engine, ref calldata);
     Serde::serialize(@collateral_join, ref calldata);
+    Serde::serialize(@hook, ref calldata);
 
     let result = deploy(
         *decl.class_hash(), calldata, Option::None, true, fee(), Option::None,

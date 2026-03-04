@@ -1,6 +1,6 @@
 // Contract addresses on Starknet Sepolia
 export const ADDRESSES = {
-  safeManager: '0x0276ac98c87bddacc6d0afe2d4482ee57e9d6902753e895b94f7265b4c0d91b1',
+  safeManager: '0x07aec9c3d46853af2a2c924b1cdd839ffe38ffdc5d174c44d34c537d24d8aae8',
   safeEngine: '0x02f4f6c374c20ddf3ea5e59cc70f2ad4c2bfb5786ca6c146266f89f7da575421',
   collateralJoin: '0x0362bd21cf4fd2ada59945e27c0fe10802dde0061e6aeeae0dd81b80669b4687',
   wbtc: '0x04ab76b407a4967de3683d387c598188d436d22d51416e8c8783156625874e20',

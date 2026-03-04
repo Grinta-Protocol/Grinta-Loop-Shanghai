@@ -153,6 +153,7 @@ pub fn deploy_grinta_hook(
     safe_engine_addr: ContractAddress,
     pid_addr: ContractAddress,
     oracle_addr: ContractAddress,
+    ekubo_core_addr: ContractAddress,
     grit_token: ContractAddress,
     wbtc_token: ContractAddress,
     usdc_token: ContractAddress,
@@ -163,6 +164,7 @@ pub fn deploy_grinta_hook(
     calldata.append(safe_engine_addr.into());
     calldata.append(pid_addr.into());
     calldata.append(oracle_addr.into());
+    calldata.append(ekubo_core_addr.into());
     calldata.append(grit_token.into());
     calldata.append(wbtc_token.into());
     calldata.append(usdc_token.into());
@@ -174,12 +176,14 @@ pub fn deploy_safe_manager(
     admin_addr: ContractAddress,
     safe_engine_addr: ContractAddress,
     join_addr: ContractAddress,
+    hook_addr: ContractAddress,
 ) -> (ContractAddress, ISafeManagerDispatcher) {
     let contract = declare("SafeManager").unwrap().contract_class();
     let mut calldata: Array<felt252> = array![];
     calldata.append(admin_addr.into());
     calldata.append(safe_engine_addr.into());
     calldata.append(join_addr.into());
+    calldata.append(hook_addr.into());
     let (addr, _) = contract.deploy(@calldata).unwrap();
     (addr, ISafeManagerDispatcher { contract_address: addr })
 }
@@ -223,15 +227,16 @@ pub fn deploy_full_system() -> GrintaSystem {
     // 5. Deploy PIDController (seed_proposer set later to hook)
     let (pid_addr, pid) = deploy_pid_controller(admin_addr, admin_addr);
 
-    // 6. Deploy GrintaHook
+    // 6. Deploy GrintaHook (ekubo_core = 0 in tests, skips set_call_points)
     let usdc_mock: ContractAddress = 'usdc'.try_into().unwrap();
+    let zero_core: ContractAddress = 0.try_into().unwrap();
     let (hook_addr, hook) = deploy_grinta_hook(
-        admin_addr, safe_engine_addr, pid_addr, oracle_addr,
+        admin_addr, safe_engine_addr, pid_addr, oracle_addr, zero_core,
         safe_engine_addr, wbtc_addr, usdc_mock,
     );
 
-    // 7. Deploy SafeManager
-    let (manager_addr, manager) = deploy_safe_manager(admin_addr, safe_engine_addr, join_addr);
+    // 7. Deploy SafeManager (with hook for keeper-less price updates)
+    let (manager_addr, manager) = deploy_safe_manager(admin_addr, safe_engine_addr, join_addr, hook_addr);
 
     // 8. Wire up permissions
     // SAFEEngine: set safe_manager, hook, collateral_join

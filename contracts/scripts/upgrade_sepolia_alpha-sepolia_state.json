@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "transactions": {
+    "transactions": {
+      "61fd431236ab464582e42d970d13567a2f69336350c26400791f6da358860475": {
+        "name": "deploy",
+        "output": {
+          "type": "ErrorResponse",
+          "message": "Transaction execution error = TransactionExecutionErrorData { transaction_index: 0, execution_error: Nested(InnerContractExecutionError { contract_address: 0x72f0d2391f7ce9103d31a64b6a36e0fe8d32f908d2e183a02d9d46403b21ce2, class_hash: 0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f, selector: 0x15d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad, error: Nested(InnerContractExecutionError { contract_address: 0x2ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125, class_hash: 0x1b2df6d8861670d4a8ca4670433b2418d78169c2947f46dc614e69f333745c8, selector: 0x1987cbd17808b9a23693d4de7e246a443cfe37e6e7fbaeabd7d7e6532b07c3d, error: Nested(InnerContractExecutionError { contract_address: 0x504e171d6774f06985d6e1b2a98c3613e6baaca40ee85e98b1d0c3c57d0c866, class_hash: 0x24fed61c33b30a56adf00f8724c4cf80f5c0cae1de16185e729d20023b0c30, selector: 0x28ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194, error: Nested(InnerContractExecutionError { contract_address: 0x504e171d6774f06985d6e1b2a98c3613e6baaca40ee85e98b1d0c3c57d0c866, class_hash: 0x24fed61c33b30a56adf00f8724c4cf80f5c0cae1de16185e729d20023b0c30, selector: 0x28ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194, error: Message(\"0x496e70757420746f6f206c6f6e6720666f7220617267756d656e7473 ('Input too long for arguments')\") }) }) }) }) }"
+        },
+        "status": "Error",
+        "timestamp": 1772590053,
+        "misc": null
+      },
+      "0452ff26c43b1f96c873af4dbc43c1541b4edc5a6bdab9a0c4d91ed6ebfb1d2b": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x0412910f7dd2acd4dd29494bfacdee334d153939e775605d1dac5934a0406f1f"
+        },
+        "status": "Success",
+        "timestamp": 1772589434,
+        "misc": null
+      },
+      "358283157099fa608474f31b7a51e43be03da0e55f5fe5d2eb5f80d5fc64cf59": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x0483911fb5881f05185ff4bcf377e7bacff7be5daf493562626517efa0e96eda"
+        },
+        "status": "Success",
+        "timestamp": 1772589402,
+        "misc": null
+      },
+      "4e80f79035e74d2fb094865d6a4d911f77ba361d930e7ecba00cba2e1badedab": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x0598aae97b88c21874893e8cea46b8b1d1b98cc07e5fc5668f89869e5eedad07"
+        },
+        "status": "Success",
+        "timestamp": 1772589418,
+        "misc": null
+      },
+      "a7201618f71b7c260833a5b7d0952354969627081ff6197452f177bd84a76e3b": {
+        "name": "declare",
+        "output": {
+          "type": "DeclareResponse",
+          "class_hash": "0x0024fed61c33b30a56adf00f8724c4cf80f5c0cae1de16185e729d20023b0c30",
+          "transaction_hash": "0x002a8ecf113fe8dac5a31039764c7e09a6140e78c33f2706f084a6f8cfd6bb2a"
+        },
+        "status": "Success",
+        "timestamp": 1772589351,
+        "misc": null
+      },
+      "64df038dad67e830873fda231bef8581713821ddb2ae0e4a504b7caffe726ba8": {
+        "name": "deploy",
+        "output": {
+          "type": "DeployResponse",
+          "contract_address": "0x04e5d8c61fc059bb689169b217c37016e593a894042909e2b71b6c4f7b30fcdf",
+          "transaction_hash": "0x07eaf550d4b2a00678cc32747bc7626af0dce5add9de1cd931155bc849c9bd9b"
+        },
+        "status": "Success",
+        "timestamp": 1772589324,
+        "misc": null
+      },
+      "b7e7dac76ccc7ba2108c6e93b0b70ed806b0df287159e0f5e08e0d53867cda00": {
+        "name": "deploy",
+        "output": {
+          "type": "DeployResponse",
+          "contract_address": "0x0407e0e04bf0b5544856f06250b8ee23366e372cdbadfc71c84df97219b1a163",
+          "transaction_hash": "0x0435a30e87456b9f7a8a015455c1b84f0dfd37502b8cda3b2991cfe251c58f12"
+        },
+        "status": "Success",
+        "timestamp": 1772589356,
+        "misc": null
+      },
+      "a25838df4df59ea57b952fa4b5021d45a6c7777120ef5c313541b0e0daaae466": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x02e856f0730f43c265e516d4bd58e4855ebb85c732a452fbd004d1bd829e677f"
+        },
+        "status": "Success",
+        "timestamp": 1772589406,
+        "misc": null
+      },
+      "c90301d514ad00a079319c6cd77cfef5fbb810967eb2640888f66e19d5536790": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x02dbd303a48cb0abcf0c46432bc8b38979be50d2ac2c56ba4d305523f48d185d"
+        },
+        "status": "Success",
+        "timestamp": 1772589396,
+        "misc": null
+      },
+      "8c659842400fd3217b58c919e73cb728807b4641c8aa436ea9b4348e406a2b48": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x041a775d8861fabde287299162686a0545e8a594e96b92626f368f0a38d480d4"
+        },
+        "status": "Success",
+        "timestamp": 1772589423,
+        "misc": null
+      },
+      "496ef00833eaf4e64955a3a3cb2e44e4fc866807c3bee673df141171ebddded8": {
+        "name": "deploy",
+        "output": {
+          "type": "DeployResponse",
+          "contract_address": "0x02d89183245b3fa50f7f898fb268bdd1d460398bc6f791b99e3a059b3815aac1",
+          "transaction_hash": "0x0291f8c97f2f590351d9625d46eea1178ee6559641e83dd1656c6dd8ac46990d"
+        },
+        "status": "Success",
+        "timestamp": 1772589389,
+        "misc": null
+      },
+      "f26ef9b7d5a451adc518a335d09dbc6fb0e9449ade8bfabe3095d2bf0d5a1139": {
+        "name": "declare",
+        "output": {
+          "type": "DeclareResponse",
+          "class_hash": "0x01d7f79bde00667dfd1e970aab80a0a32c86fbe6ec3c652cab10773884300f6d",
+          "transaction_hash": "0x030a9ee4e89b16fd5c2f1d739e331520ae88acd372eaa3be150c23b7c948b2de"
+        },
+        "status": "Success",
+        "timestamp": 1772589383,
+        "misc": null
+      },
+      "1f7e27e09332c8f2833b59aa15adec8e507919d7e1cb69c82c40aa51272a6a39": {
+        "name": "declare",
+        "output": {
+          "type": "DeclareResponse",
+          "status": "AlreadyDeclared",
+          "class_hash": "0x0748add1b76134d1b88e00b65dc80577a5fb6e4adb2f4940a568460d94f8826f"
+        },
+        "status": "Success",
+        "timestamp": 1772589318,
+        "misc": null
+      },
+      "e1edfe156c3753945d78f1f0b92914f671d630ffc633a25b8adb1287d1dc4a73": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x00ecab9976e823d69049474051e81d3432f94dfef553ff33a68b1aa1f147e78a"
+        },
+        "status": "Success",
+        "timestamp": 1772589429,
+        "misc": null
+      },
+      "11cf9102efc2c8d6fd48aad860be8ac2ff0e68cefa031b43d85b06af802867dd": {
+        "name": "invoke",
+        "output": {
+          "type": "InvokeResponse",
+          "transaction_hash": "0x035634eac8570ea54cb192279c655c7e4b3d642dade05db4e48136d333faa984"
+        },
+        "status": "Success",
+        "timestamp": 1772589412,
+        "misc": null
+      }
+    }
+  }
+}
