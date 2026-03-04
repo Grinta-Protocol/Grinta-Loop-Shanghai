@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Verification script for liquidity provision
+# After add_liquidity_sepolia.cairo is executed, this script helps verify the results
+
+set -e
+
+echo "=================================================="
+echo "GRIT/USDC Liquidity Provision Verification"
+echo "=================================================="
+echo ""
+
+# Contract addresses
+GRIT="0x02f4f6c374c20ddf3ea5e59cc70f2ad4c2bfb5786ca6c146266f89f7da575421"
+USDC="0x04e5d8c61fc059bb689169b217c37016e593a894042909e2b71b6c4f7b30fcdf"
+EKUBO_CORE="0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384"
+GRINTA_HOOK="0x06a78d63d252cbb3192c64f9fdd85598a716992edaf693437fe466d9861c7ca5"
+SAFE_ENGINE="0x02f4f6c374c20ddf3ea5e59cc70f2ad4c2bfb5786ca6c146266f89f7da575421"
+PID_CONTROLLER="0x0694c76e4817aea5ae3858e99048ceb844679ed479d075ab9e0cd083fc9aee6a"
+
+echo "1. Checking liquidity provision status..."
+echo "   GRIT address: $GRIT"
+echo "   USDC address: $USDC"
+echo "   Ekubo Core:   $EKUBO_CORE"
+echo ""
+
+echo "2. Next steps after liquidity is confirmed:"
+echo ""
+echo "   a) Trigger a test swap to verify GrintaHook fires:"
+echo "      - Call Ekubo Core's swap function"
+echo "      - Swap 1,000 MockUSDC for GRIT"
+echo "      - This should trigger the after_swap hook"
+echo ""
+echo "   b) Verify GrintaHook events:"
+echo "      - Check for MarketPriceUpdated event (Grit/USDC price)"
+echo "      - Check for PricesUpdated event (BTC/USDC collateral price)"
+echo "      - Check for RateUpdated event (redemption rate change)"
+echo ""
+echo "   c) Monitor SAFEEngine state:"
+echo "      - Read redemption price"
+echo "      - Read redemption rate"
+echo "      - Verify it changed after swap"
+echo ""
+echo "   d) Monitor PIDController state:"
+echo "      - Read computed rate before and after swap"
+echo "      - Verify rate adjustment was applied"
+echo ""
+
+echo "3. Manual verification commands (using sncast):"
+echo ""
+echo "   # Check pool state on Ekubo"
+echo "   sncast call $EKUBO_CORE get_position --url https://starknet-sepolia.public.blastapi.io/rpc/v0_7"
+echo ""
+echo "   # Read last market price from hook"
+echo "   sncast call $GRINTA_HOOK get_market_price --url https://starknet-sepolia.public.blastapi.io/rpc/v0_7"
+echo ""
+echo "   # Read collateral price from hook"
+echo "   sncast call $GRINTA_HOOK get_collateral_price --url https://starknet-sepolia.public.blastapi.io/rpc/v0_7"
+echo ""
+echo "   # Read redemption price from SAFEEngine"
+echo "   sncast call $SAFE_ENGINE get_redemption_price --url https://starknet-sepolia.public.blastapi.io/rpc/v0_7"
+echo ""
+
+echo "=================================================="
+echo "Liquidity provision script ready!"
+echo "=================================================="
+echo ""
+echo "Execute liquidity provision:"
+echo "  cd /mnt/c/Users/henry/desktop/pid/contracts/scripts"
+echo "  sncast --profile sepolia script run add_liquidity_sepolia --package grinta_scripts"
+echo ""

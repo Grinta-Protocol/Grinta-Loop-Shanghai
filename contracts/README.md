@@ -49,20 +49,42 @@ A PID-controlled stablecoin protocol on Starknet. Grinta uses a HAI-style redemp
 
 Total: ~1,812 lines (excluding tests and interfaces)
 
-## Sepolia Deployment
+## Sepolia Deployment (V2 — Keeper-less with Ekubo Hook)
 
-| Contract | Address |
-|---|---|
-| MockWBTC | [`0x07c7d91d...f605c9`](https://sepolia.starkscan.co/contract/0x07c7d91d5cc1f88b40f8632c8b1bf96bdc69e22dabff8114ac6c13f5cbf605c9) |
-| SAFEEngine | [`0x041649a2...038c15`](https://sepolia.starkscan.co/contract/0x041649a23c3bc0d960b0de649fe96d1380199153c2b9fbb2c2b3b81792038c15) |
-| CollateralJoin | [`0x008657c5...24284f`](https://sepolia.starkscan.co/contract/0x008657c5bb4611a581adb20c7de2008f830df4c757dab169a3ee931aed24284f) |
-| PIDController | [`0x01cae0b0...6eec5`](https://sepolia.starkscan.co/contract/0x01cae0b0de880d26d09a52a4c6e33dcd189fa1bcf40986103d3c3eb46a66eec5) |
-| GrintaHook | [`0x07a17830...d9b14`](https://sepolia.starkscan.co/contract/0x07a17830f3aecf5a22ecfea9f3f88cb6eafd9abc425505b167755e21246d9b14) |
-| SafeManager | [`0x002a36bb...11b9d`](https://sepolia.starkscan.co/contract/0x002a36bbb5d7f8694f2f6ab9b376a691fe277f00d5977cae989452ca84011b9d) |
+**Status**: Live and operational | **Deployed**: March 3, 2025
 
-External dependencies on Sepolia:
-- Ekubo Oracle Extension: `0x003ccf3ee24638dd5f1a51ceb783e120695f53893f6fd947cc2dcabb3f86dc65`
-- USDC (bridged): `0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080`
+### Core Protocol Contracts
+
+| Contract | Address | Role |
+|---|---|---|
+| **GrintaHook** | `0x06a78d63d252cbb3192c64f9fdd85598a716992edaf693437fe466d9861c7ca5` | Ekubo extension — keeper-less price/rate updates on every swap |
+| **SafeManager** | `0x07aec9c3d46853af2a2c924b1cdd839ffe38ffdc5d174c44d34c537d24d8aae8` | User-facing SAFE management interface |
+| **SAFEEngine** | `0x02f4f6c374c20ddf3ea5e59cc70f2ad4c2bfb5786ca6c146266f89f7da575421` | Core ledger + Grit ERC20 + redemption price mechanism |
+| **CollateralJoin** | `0x0362bd21cf4fd2ada59945e27c0fe10802dde0061e6aeeae0dd81b80669b4687` | WBTC custody (8→18 decimal conversion) |
+| **PIDController** | `0x0694c76e4817aea5ae3858e99048ceb844679ed479d075ab9e0cd083fc9aee6a` | HAI-style PI controller for redemption rate |
+
+### Test/Mock Contracts
+
+| Contract | Address | Decimals |
+|---|---|---|
+| MockWBTC | `0x04ab76b407a4967de3683d387c598188d436d22d51416e8c8783156625874e20` | 8 |
+| MockUSDC | `0x04e5d8c61fc059bb689169b217c37016e593a894042909e2b71b6c4f7b30fcdf` | 6 |
+| MockEkuboOracle | `0x066822a5e3ebd7f15b9b279b1dfabfe5c1f808010167cda027a22316b1999071` | — |
+
+### External Dependencies
+
+| Service | Address | Purpose |
+|---|---|---|
+| Ekubo Core | `0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384` | DEX protocol + hook execution |
+| Ekubo Oracle Extension | `0x003ccf3ee24638dd5f1a51ceb783e120695f53893f6fd947cc2dcabb3f86dc65` | TWAP price feeds |
+
+### Pool Configuration (GRIT/USDC)
+
+- **Token0**: GRIT (SAFEEngine) — 18 decimals
+- **Token1**: MockUSDC — 6 decimals
+- **Hook**: GrintaHook (registered for `after_swap` callbacks)
+- **Initial Liquidity**: 10,000 GRIT + 10,000 MockUSDC (pending sncast execution)
+- **Status**: Pool initialized, liquidity provision in progress
 
 ## How It Works
 
@@ -111,15 +133,32 @@ snforge test
 cd scripts && scarb build
 ```
 
-## Deploying
+## Deploying & Liquidity Provision
 
-1. Set your deployer address in `scripts/src/addresses.cairo`
-2. Configure sncast account: `sncast account create`
-3. Run:
+### Initial Deployment
+
 ```bash
 cd scripts
 sncast --profile sepolia script run deploy_sepolia --package grinta_scripts
 ```
+
+This deploys all core contracts, sets permissions, and initializes the GRIT/USDC pool on Ekubo with GrintaHook as extension.
+
+### Adding Liquidity (Post-Deployment)
+
+After deployment, add liquidity to the GRIT/USDC pool:
+
+```bash
+cd scripts
+sncast --profile sepolia script run add_liquidity_sepolia --package grinta_scripts
+```
+
+This script:
+1. Approves 10,000 GRIT to Ekubo Core
+2. Approves 10,000 MockUSDC to Ekubo Core
+3. Calls Ekubo's `update_position` to mint liquidity with 1:1 ratio
+
+Once liquidity is added, the pool becomes active and every swap triggers the GrintaHook, enabling keeper-less protocol operation.
 
 ## PID Controller Parameters
 
