@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "transactions": {
+    "transactions": {
+      "9f0fb8e8ef9dbbb0a57fffada0254bc052521c9780d76b4388dacc32be898300": {
+        "name": "invoke",
+        "output": {
+          "type": "ErrorResponse",
+          "message": "Transaction execution error = TransactionExecutionErrorData { transaction_index: 0, execution_error: Nested(InnerContractExecutionError { contract_address: 0x72f0d2391f7ce9103d31a64b6a36e0fe8d32f908d2e183a02d9d46403b21ce2, class_hash: 0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f, selector: 0x15d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad, error: Message(\"(0x617267656e742f6d756c746963616c6c2d6661696c6564 ('argent/multicall-failed'), 0x0 (''), 0x454e545259504f494e545f4e4f545f464f554e44 ('ENTRYPOINT_NOT_FOUND'), 0x454e545259504f494e545f4641494c4544 ('ENTRYPOINT_FAILED'))\") }) }"
+        },
+        "status": "Error",
+        "timestamp": 1772598828,
+        "misc": null
+      }
+    }
+  }
+}

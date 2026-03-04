@@ -26,6 +26,7 @@ build-external-contracts = [
 [scripts]
 deploy_sepolia = "sncast --profile sepolia script run deploy_sepolia --package grinta_scripts"
 upgrade_sepolia = "sncast --profile sepolia script run upgrade_sepolia --package grinta_scripts"
+add_liquidity_sepolia = "sncast --profile sepolia script run add_liquidity_sepolia --package grinta_scripts"
 
 [tool.fmt]
 sort-module-level-items = true
