@@ -7,7 +7,7 @@ pub mod GrintaHook {
     use starknet::{ContractAddress, get_caller_address, get_block_timestamp};
     use core::num::traits::Zero;
     use grinta::types::WAD;
-    use grinta::types_ekubo::{PoolKey, SwapParameters, Delta, i129, CALL_POINTS_AFTER_SWAP};
+    use grinta::types_ekubo::{PoolKey, SwapParameters, UpdatePositionParameters, Delta, Bounds, i129};
     use grinta::interfaces::isafe_engine::{ISAFEEngineDispatcher, ISAFEEngineDispatcherTrait};
     use grinta::interfaces::ipid_controller::{IPIDControllerDispatcher, IPIDControllerDispatcherTrait};
     use grinta::interfaces::iekubo::{
@@ -35,7 +35,7 @@ pub mod GrintaHook {
         safe_engine: ContractAddress,
         pid_controller: ContractAddress,
         ekubo_oracle: ContractAddress,    // MockEkuboOracle for BTC/USDC
-        ekubo_core: ContractAddress,      // Ekubo Core (for set_call_points registration)
+        ekubo_core: ContractAddress,      // Ekubo Core (for set_call_points registration) - could be added by ekubo libraries
 
         // Token addresses
         grit_token: ContractAddress,       // Grit stablecoin (= SAFEEngine address)
@@ -193,14 +193,13 @@ pub mod GrintaHook {
 
     #[abi(embed_v0)]
     impl ExtensionImpl of grinta::interfaces::igrinta_hook::IExtension<ContractState> {
-        /// Called when pool is initialized — we request only after_swap callbacks
         fn before_initialize_pool(
             ref self: ContractState,
             caller: ContractAddress,
             pool_key: PoolKey,
             initial_tick: i129,
-        ) -> u16 {
-            CALL_POINTS_AFTER_SWAP
+        ) {
+            // No-op — call points are set via register_extension()
         }
 
         fn after_initialize_pool(
@@ -245,6 +244,46 @@ pub mod GrintaHook {
             // Try PID rate update (throttled to 3600s)
             self._try_update_rate();
         }
+
+        fn before_update_position(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            params: UpdatePositionParameters,
+        ) {
+            // No-op — call point disabled
+        }
+
+        fn after_update_position(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            params: UpdatePositionParameters,
+            delta: Delta,
+        ) {
+            // No-op — call point disabled
+        }
+
+        fn before_collect_fees(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            salt: felt252,
+            bounds: Bounds,
+        ) {
+            // No-op — call point disabled
+        }
+
+        fn after_collect_fees(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            salt: felt252,
+            bounds: Bounds,
+            delta: Delta,
+        ) {
+            // No-op — call point disabled
+        }
     }
 
     // ========================================================================
@@ -258,6 +297,15 @@ pub mod GrintaHook {
         fn update(ref self: ContractState) {
             self._update_collateral_price();
             self._try_update_rate();
+        }
+
+        /// Public setter — anyone can push a GRIT/USD market price (WAD)
+        /// Enables keepers, agents, or frontends to feed price without swapping
+        fn set_market_price(ref self: ContractState, price: u256) {
+            assert(price > 0, 'HOOK: price must be > 0');
+            self.last_market_price.write(price);
+            let now = get_block_timestamp();
+            self.emit(MarketPriceUpdated { market_price: price, timestamp: now });
         }
 
         fn get_market_price(self: @ContractState) -> u256 {

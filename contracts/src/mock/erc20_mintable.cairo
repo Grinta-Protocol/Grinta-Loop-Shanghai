@@ -99,6 +99,37 @@ pub mod ERC20Mintable {
         }
     }
 
+    // ====================================================================
+    // camelCase aliases (required by Ekubo Positions and wallets)
+    // ====================================================================
+
+    #[external(v0)]
+    fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+        self.balances.read(account)
+    }
+
+    #[external(v0)]
+    fn totalSupply(self: @ContractState) -> u256 {
+        self.total_supply.read()
+    }
+
+    #[external(v0)]
+    fn transferFrom(
+        ref self: ContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+    ) -> bool {
+        let caller = get_caller_address();
+        let allowed = self.allowances.read((sender, caller));
+        assert(allowed >= amount, 'ERC20: insufficient allowance');
+        self.allowances.write((sender, caller), allowed - amount);
+        let sender_bal = self.balances.read(sender);
+        assert(sender_bal >= amount, 'ERC20: insufficient balance');
+        self.balances.write(sender, sender_bal - amount);
+        let recipient_bal = self.balances.read(recipient);
+        self.balances.write(recipient, recipient_bal + amount);
+        self.emit(Transfer { from: sender, to: recipient, value: amount });
+        true
+    }
+
     /// Public mint — no access control, for testing only
     #[external(v0)]
     fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {

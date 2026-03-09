@@ -2,7 +2,7 @@ use grinta_scripts::{addresses, constants, deploy_helpers};
 use sncast_std::{DisplayContractAddress, FeeSettingsTrait, invoke};
 use starknet::ContractAddress;
 
-/// Main deployment orchestrator for Grinta on Sepolia
+/// Main deployment orchestrator for Grinta on Sepolia - FRESH DEPLOYMENT
 fn main() {
     let admin: ContractAddress = addresses::DEPLOYER;
     println!("Deploying Grinta to Sepolia with admin: {}", admin);
@@ -39,35 +39,41 @@ fn main() {
     println!("   PIDController: {}", pid_controller);
 
     // =========================================================================
-    // 5. Deploy GrintaHook (Ekubo extension = OracleRelayer)
-    //    grit_token = safe_engine (SAFEEngine IS the Grit ERC20)
+    // 5. Deploy MockEkuboOracle (for BTC/USD price)
     // =========================================================================
-    println!("5. Deploying GrintaHook...");
+    println!("5. Deploying MockEkuboOracle...");
+    let mock_oracle: ContractAddress = deploy_helpers::deploy_mock_ekubo_oracle();
+    println!("   MockEkuboOracle: {}", mock_oracle);
+
+    // =========================================================================
+    // 6. Deploy GrintaHook (Ekubo extension for keeper-less price updates)
+    // =========================================================================
+    println!("6. Deploying GrintaHook...");
     let grinta_hook: ContractAddress = deploy_helpers::deploy_grinta_hook(
         admin,
         safe_engine,
         pid_controller,
-        addresses::EKUBO_ORACLE,
+        mock_oracle,
         addresses::EKUBO_CORE,
-        safe_engine,     // grit_token = SAFEEngine address (it implements ERC20)
-        mock_wbtc,       // wbtc_token
-        addresses::USDC, // usdc quote token
+        safe_engine, // grit_token = SAFEEngine (it's the GRIT ERC20)
+        mock_wbtc,
+        addresses::USDC,
     );
     println!("   GrintaHook: {}", grinta_hook);
 
     // =========================================================================
-    // 6. Deploy SafeManager (user/agent facing, with hook for keeper-less updates)
+    // 7. Deploy SafeManager (user operations)
     // =========================================================================
-    println!("6. Deploying SafeManager...");
+    println!("7. Deploying SafeManager...");
     let safe_manager: ContractAddress = deploy_helpers::deploy_safe_manager(
         admin, safe_engine, collateral_join, grinta_hook,
     );
     println!("   SafeManager: {}", safe_manager);
 
     // =========================================================================
-    // 7. Wire permissions via invoke
+    // 8. Wire permissions via invoke
     // =========================================================================
-    println!("7. Wiring permissions...");
+    println!("8. Wiring permissions...");
 
     // SAFEEngine: set_safe_manager
     let mut calldata: Array<felt252> = array![];
@@ -110,10 +116,9 @@ fn main() {
     println!("   pid_controller.set_seed_proposer(hook) OK");
 
     // =========================================================================
-    // 8. Set initial BTC price via temporary hook swap
-    //    set_hook(admin) → update_collateral_price → set_hook(real_hook)
+    // 9. Set initial BTC price
     // =========================================================================
-    println!("8. Setting initial BTC price...");
+    println!("9. Setting initial BTC price...");
 
     // Temporarily set hook to admin so we can call update_collateral_price
     let mut calldata: Array<felt252> = array![];
@@ -146,9 +151,23 @@ fn main() {
     println!("   safe_engine.set_hook(grinta_hook) OK");
 
     // =========================================================================
-    // 9. Mint test WBTC to admin (10 WBTC = 1e9 satoshis)
+    // 10. Register GrintaHook with Ekubo Core
     // =========================================================================
-    println!("9. Minting test WBTC to admin...");
+    println!("10. Registering GrintaHook with Ekubo Core...");
+    invoke(
+        grinta_hook,
+        selector!("register_extension"),
+        array![],
+        FeeSettingsTrait::estimate(),
+        Option::None,
+    )
+        .expect('register_extension failed');
+    println!("   GrintaHook registered for after_swap callbacks");
+
+    // =========================================================================
+    // 11. Mint test WBTC to admin (10 WBTC = 1e9 satoshis)
+    // =========================================================================
+    println!("11. Minting test WBTC to admin...");
     let mut calldata: Array<felt252> = array![];
     Serde::serialize(@admin, ref calldata);
     let mint_amount: u256 = constants::wbtc_mint_amount();
@@ -161,19 +180,31 @@ fn main() {
     println!("   Minted 10 WBTC to admin");
 
     // =========================================================================
-    // 10. Summary
+    // Summary
     // =========================================================================
     println!("-------------------------------------------------");
     println!("Grinta Sepolia Deployment Complete!");
     println!("-------------------------------------------------");
-    println!("MockWBTC:       {}", mock_wbtc);
-    println!("SAFEEngine:     {}", safe_engine);
-    println!("CollateralJoin: {}", collateral_join);
-    println!("PIDController:  {}", pid_controller);
-    println!("GrintaHook:     {}", grinta_hook);
-    println!("SafeManager:    {}", safe_manager);
+    println!("MockWBTC:         {}", mock_wbtc);
+    println!("SAFEEngine:       {}", safe_engine);
+    println!("CollateralJoin:   {}", collateral_join);
+    println!("PIDController:    {}", pid_controller);
+    println!("MockEkuboOracle:  {}", mock_oracle);
+    println!("GrintaHook:       {}", grinta_hook);
+    println!("SafeManager:      {}", safe_manager);
     println!("-------------------------------------------------");
-    println!("Ekubo Oracle:   {}", addresses::EKUBO_ORACLE);
-    println!("USDC:           {}", addresses::USDC);
+    println!("Ekubo Core:       {}", addresses::EKUBO_CORE);
+    println!("Ekubo Positions:  {}", addresses::EKUBO_POSITIONS);
+    println!("Ekubo Oracle:     {}", addresses::EKUBO_ORACLE);
+    println!("USDC:             {}", addresses::USDC);
     println!("-------------------------------------------------");
+    println!("");
+    println!("=== NEW ADDRESSES TO SAVE ===");
+    println!("MOCK_WBTC:        {}", mock_wbtc);
+    println!("SAFE_ENGINE:      {}", safe_engine);
+    println!("COLLATERAL_JOIN:  {}", collateral_join);
+    println!("PID_CONTROLLER:   {}", pid_controller);
+    println!("MOCK_EKUBO_ORACLE: {}", mock_oracle);
+    println!("GRINTA_HOOK:      {}", grinta_hook);
+    println!("SAFE_MANAGER:     {}", safe_manager);
 }

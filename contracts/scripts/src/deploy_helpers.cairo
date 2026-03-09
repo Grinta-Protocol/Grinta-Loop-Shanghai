@@ -134,10 +134,29 @@ pub fn deploy_grinta_hook(
     Serde::serialize(@wbtc_token, ref calldata);
     Serde::serialize(@usdc_token, ref calldata);
 
-    let result = deploy(
+    let deploy_result = deploy(
         *decl.class_hash(), calldata, Option::None, true, fee(), Option::None,
+    );
+
+    match deploy_result {
+        Result::Ok(result) => result.contract_address,
+        Result::Err(e) => {
+            let mut err_msg: Array<felt252> = array![];
+            Serde::serialize(@e, ref err_msg);
+            panic(err_msg)
+        },
+    }
+}
+
+/// Deploy MockEkuboOracle — mock oracle for BTC/USD price
+pub fn deploy_mock_ekubo_oracle() -> ContractAddress {
+    let decl = declare("MockEkuboOracle", fee(), Option::None)
+        .expect('MockEkuboOracle declare fail');
+
+    let result = deploy(
+        *decl.class_hash(), array![], Option::None, true, fee(), Option::None,
     )
-        .expect('GrintaHook deploy fail');
+        .expect('MockEkuboOracle deploy fail');
 
     result.contract_address
 }

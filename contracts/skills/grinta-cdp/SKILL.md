@@ -58,13 +58,22 @@ SAFE owners can authorize agent addresses to perform operations (deposit, withdr
 > **Network**: Starknet Sepolia
 
 ```
-SAFE_MANAGER:     0x002a36bbb5d7f8694f2f6ab9b376a691fe277f00d5977cae989452ca84011b9d
-SAFE_ENGINE:      0x041649a23c3bc0d960b0de649fe96d1380199153c2b9fbb2c2b3b81792038c15
-COLLATERAL_JOIN:  0x008657c5bb4611a581adb20c7de2008f830df4c757dab169a3ee931aed24284f
-PID_CONTROLLER:   0x01cae0b0de880d26d09a52a4c6e33dcd189fa1bcf40986103d3c3eb46a66eec5
-GRINTA_HOOK:      0x07a17830f3aecf5a22ecfea9f3f88cb6eafd9abc425505b167755e21246d9b14
-WBTC (Mock):      0x07c7d91d5cc1f88b40f8632c8b1bf96bdc69e22dabff8114ac6c13f5cbf605c9
+SAFE_MANAGER:     0x05be8041f47bd935d8ce98e3b5b2ded6540acc6d4e24c64f3822927c5339eac6
+SAFE_ENGINE:      0x02f4f6c374c20ddf3ea5e59cc70f2ad4c2bfb5786ca6c146266f89f7da575421
+COLLATERAL_JOIN:  0x0362bd21cf4fd2ada59945e27c0fe10802dde0061e6aeeae0dd81b80669b4687
+PID_CONTROLLER:   0x0694c76e4817aea5ae3858e99048ceb844679ed479d075ab9e0cd083fc9aee6a
+GRINTA_HOOK:      0x0064dc1c0264cc91d871b0cc5cda181730ff79978db5934abc4f2830993b10b5
+ORACLE_RELAYER:   0x06ed1049ac5d4bccd34eb476a28a62816747c4bb8a90d71f713d21938d5f633d
+WBTC (Mock):      0x04ab76b407a4967de3683d387c598188d436d22d51416e8c8783156625874e20
+USDC (Mock):      0x0728f54606297716e46af72251733521e2c2a374abbc3dce4bcee8df4744dd30
+GRIT (= SAFEEngine): 0x02f4f6c374c20ddf3ea5e59cc70f2ad4c2bfb5786ca6c146266f89f7da575421
 ```
+
+### Ekubo Pool (GRIT/USDC)
+- Pool on Ekubo Sepolia with GrintaHook as extension
+- Fee: 0.3%, Tick spacing: 1000
+- token0 = GRIT, token1 = MockUSDC (sorted by address)
+- Liquidity seeded: ~10,000 GRIT + ~10,000 USDC
 
 ## SafeManager Functions (User/Agent Entry Point)
 
@@ -147,6 +156,30 @@ Returns the owner address of a SAFE.
 is_authorized(safe_id: u64, agent: ContractAddress) -> bool
 ```
 Checks if an agent is authorized to operate on a SAFE.
+
+## GrintaHook Functions (Price Oracle + PID Trigger)
+
+The GrintaHook is an Ekubo extension that acts as the oracle relayer. It computes GRIT/USDC price from swap deltas and triggers PID rate updates. These functions can be called directly on the GrintaHook contract.
+
+### Write Functions
+
+```
+update()
+```
+Manual price/rate update. Called automatically by SafeManager before every SAFE operation. Reads BTC/USDC from OracleRelayer (throttled to 60s) and tries PID rate update (throttled to 3600s).
+
+```
+set_market_price(price: u256)
+```
+Public setter — anyone can push a GRIT/USD market price in WAD (18 decimals). Enables keepers, agents, or frontends to feed price without needing to swap. Example: `1000000000000000000` = $1.00.
+
+### Read Functions
+
+```
+get_market_price() -> u256            // GRIT/USD price in WAD (from last swap or set_market_price)
+get_collateral_price() -> u256        // BTC/USD price in WAD (from OracleRelayer)
+get_last_update_time() -> u64         // Timestamp of last collateral price update
+```
 
 ## SAFEEngine View Functions (Direct Reads)
 
@@ -343,6 +376,28 @@ When depositing WBTC, you must approve the CollateralJoin contract (not SafeMana
 2. `SafeManager.deposit(safe_id, amount)` or `SafeManager.open_and_borrow(amount, borrow_amount)`
 
 These can be batched in a single multicall transaction on Starknet.
+
+### Price Feed Agent
+
+Push BTC/USD price from off-chain APIs to the OracleRelayer, and set GRIT market price:
+
+```
+Loop:
+  // 1. Fetch BTC/USD from CoinGecko or other API
+  btc_price_usd = fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd")
+
+  // 2. Convert to WAD and push to OracleRelayer
+  price_wad = btc_price_usd * 1e18
+  OracleRelayer.update_price(WBTC_ADDRESS, USDC_ADDRESS, price_wad)
+
+  // 3. Optionally set GRIT market price if no recent swaps
+  GrintaHook.set_market_price(observed_grit_price_wad)
+
+  // 4. Trigger update to push prices through the system
+  GrintaHook.update()
+
+  sleep(300)  // every 5 minutes
+```
 
 ### PoC Caveats
 This is a proof-of-concept. The following features are not yet implemented:
