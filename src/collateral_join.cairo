@@ -12,6 +12,7 @@ pub mod CollateralJoin {
         admin: ContractAddress,
         safe_manager: ContractAddress,
         safe_engine: ContractAddress,
+        liquidation_engine: ContractAddress,
         collateral_token: ContractAddress,  // WBTC address
         token_decimals: u8,                 // WBTC = 8 decimals
         total_assets: u256,                 // Total WBTC held
@@ -47,6 +48,10 @@ pub mod CollateralJoin {
     impl InternalImpl of InternalTrait {
         fn _assert_safe_manager(self: @ContractState) {
             assert(get_caller_address() == self.safe_manager.read(), 'JOIN: not manager');
+        }
+
+        fn _assert_liquidation_engine(self: @ContractState) {
+            assert(get_caller_address() == self.liquidation_engine.read(), 'JOIN: not liq engine');
         }
 
         fn _assert_admin(self: @ContractState) {
@@ -132,6 +137,25 @@ pub mod CollateralJoin {
             asset_amount
         }
 
+        /// Transfer seized collateral to a recipient (auction house). Called by LiquidationEngine.
+        /// Takes internal (WAD) amount, converts to asset amount, transfers.
+        fn seize(ref self: ContractState, to: ContractAddress, amount: u256) -> u256 {
+            self._assert_liquidation_engine();
+            let asset_amount = self._to_assets(amount);
+            assert(asset_amount > 0, 'JOIN: zero seize amount');
+
+            let total = self.total_assets.read();
+            assert(total >= asset_amount, 'JOIN: insufficient assets');
+            self.total_assets.write(total - asset_amount);
+
+            let token = IERC20Dispatcher { contract_address: self.collateral_token.read() };
+            let success = token.transfer(to, asset_amount);
+            assert(success, 'JOIN: seize transfer failed');
+
+            self.emit(Exited { user: to, asset_amount, internal_amount: amount });
+            asset_amount
+        }
+
         fn get_collateral_token(self: @ContractState) -> ContractAddress {
             self.collateral_token.read()
         }
@@ -154,5 +178,11 @@ pub mod CollateralJoin {
     fn set_safe_manager(ref self: ContractState, manager: ContractAddress) {
         self._assert_admin();
         self.safe_manager.write(manager);
+    }
+
+    #[external(v0)]
+    fn set_liquidation_engine(ref self: ContractState, engine: ContractAddress) {
+        self._assert_admin();
+        self.liquidation_engine.write(engine);
     }
 }

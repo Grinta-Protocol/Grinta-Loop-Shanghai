@@ -1,4 +1,4 @@
-use starknet::ContractAddress;
+use starknet::{ContractAddress, ClassHash};
 use grinta::types::{Safe, Health};
 
 #[starknet::interface]
@@ -29,10 +29,21 @@ pub trait ISAFEEngine<TContractState> {
     fn update_collateral_price(ref self: TContractState, price: u256);
     fn update_redemption_rate(ref self: TContractState, rate: u256);
 
+    // ---- Liquidation (called by LiquidationEngine) ----
+    fn confiscate(ref self: TContractState, safe_id: u64, collateral_amount: u256, debt_amount: u256);
+
+    // ---- Accounting (called by AccountingEngine) ----
+    fn burn_system_coins(ref self: TContractState, from: ContractAddress, amount: u256);
+
     // ---- Admin ----
     fn set_debt_ceiling(ref self: TContractState, ceiling: u256);
     fn set_liquidation_ratio(ref self: TContractState, ratio: u256);
     fn set_collateral_join(ref self: TContractState, join: ContractAddress);
     fn set_safe_manager(ref self: TContractState, manager: ContractAddress);
     fn set_hook(ref self: TContractState, hook: ContractAddress);
+    fn set_liquidation_engine(ref self: TContractState, engine: ContractAddress);
+    fn set_accounting_engine(ref self: TContractState, engine: ContractAddress);
+    fn reset_redemption_price(ref self: TContractState, price: u256, rate: u256);
+    fn mint_grit(ref self: TContractState, to: ContractAddress, amount: u256);
+    fn replace_class(ref self: TContractState, new_class_hash: ClassHash);
 }

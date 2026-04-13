@@ -13,8 +13,10 @@ pub mod PIDController {
 
     // Maximum positive rate: type(i128).max equivalent
     const POSITIVE_RATE_LIMIT: u256 = 170141183460469231731687303715884105727; // 2^127 - 1
-    // Maximum negative rate: RAY - 1 (represents -99.999...%)
-    const NEGATIVE_RATE_LIMIT: u256 = 999999999999999999999999999; // RAY - 1
+    // Minimum rate floor: ~0.9999999 RAY per second
+    // This prevents the rate from going so low that price crashes to zero
+    // At this rate, price halves in ~115 days (slow enough to be manageable)
+    const MIN_RATE_FLOOR: u256 = 999_999_930_000_000_000_000_000_000; // ~0.99999993 RAY
 
     #[storage]
     struct Storage {
@@ -180,21 +182,27 @@ pub mod PIDController {
         }
 
         /// Convert bounded PI output to a redemption rate
-        /// rate = RAY + boundedPIOutput (clamped to [1, POSITIVE_RATE_LIMIT])
+        /// rate = RAY + boundedPIOutput (clamped to [MIN_RATE_FLOOR, POSITIVE_RATE_LIMIT])
         fn _get_bounded_redemption_rate(self: @ContractState, pi_output: i128) -> u256 {
             let bounded = self._get_bounded_pi_output(pi_output);
 
             let ray_i: i128 = RAY_i128;
             if bounded < -ray_i {
-                // Would make rate negative, clamp
-                NEGATIVE_RATE_LIMIT
+                // Would make rate negative, clamp to floor
+                MIN_RATE_FLOOR
             } else {
                 let new_rate_i: i128 = ray_i + bounded;
                 if new_rate_i <= 0 {
-                    1_u256 // minimum rate
+                    MIN_RATE_FLOOR // minimum rate — prevents price crash to zero
                 } else {
                     let rate_u128: u128 = new_rate_i.try_into().unwrap();
-                    rate_u128.into()
+                    let rate: u256 = rate_u128.into();
+                    // Enforce floor
+                    if rate < MIN_RATE_FLOOR {
+                        MIN_RATE_FLOOR
+                    } else {
+                        rate
+                    }
                 }
             }
         }

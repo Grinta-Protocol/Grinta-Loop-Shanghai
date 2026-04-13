@@ -6,3 +6,10 @@ target
 snfoundry_trace/
 coverage/
 profile/
+
+# External reference repos (cloned, not part of this project)
+ekubo-contracts/
+
+# Local tooling state
+.claude/scheduled_tasks.lock
+.opencode/package-lock.json

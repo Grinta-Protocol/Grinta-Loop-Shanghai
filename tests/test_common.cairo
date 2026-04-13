@@ -1,10 +1,10 @@
 use starknet::ContractAddress;
-use snforge_std::{declare, DeclareResultTrait, ContractClassTrait, cheat_caller_address, CheatSpan};
+use snforge_std::{declare, DeclareResultTrait, ContractClassTrait, cheat_caller_address, CheatSpan, start_cheat_block_timestamp_global};
 
 use grinta::interfaces::isafe_engine::{ISAFEEngineDispatcher, ISAFEEngineDispatcherTrait};
 use grinta::interfaces::icollateral_join::{ICollateralJoinDispatcher};
 use grinta::interfaces::ipid_controller::{IPIDControllerDispatcher};
-use grinta::interfaces::igrinta_hook::{IGrintaHookDispatcher};
+use grinta::interfaces::igrinta_hook::{IGrintaHookDispatcher, IGrintaHookDispatcherTrait};
 use grinta::interfaces::isafe_manager::{ISafeManagerDispatcher};
 use grinta::interfaces::ierc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
@@ -78,6 +78,21 @@ pub trait IMintable<T> {
     fn mint(ref self: T, to: ContractAddress, amount: u256);
 }
 
+#[starknet::interface]
+pub trait IJoinSetLiq<T> {
+    fn set_liquidation_engine(ref self: T, engine: ContractAddress);
+}
+
+#[starknet::interface]
+pub trait IOracleUpdate<T> {
+    fn update_price(
+        ref self: T,
+        base_token: ContractAddress,
+        quote_token: ContractAddress,
+        price_usd_wad: u256,
+    );
+}
+
 // ============================================================================
 // Deploy helpers
 // ============================================================================
@@ -94,8 +109,8 @@ pub fn deploy_mock_wbtc() -> (ContractAddress, IERC20Dispatcher) {
     (addr, IERC20Dispatcher { contract_address: addr })
 }
 
-pub fn deploy_mock_ekubo_oracle() -> ContractAddress {
-    let contract = declare("MockEkuboOracle").unwrap().contract_class();
+pub fn deploy_oracle_relayer() -> ContractAddress {
+    let contract = declare("OracleRelayer").unwrap().contract_class();
     let (addr, _) = contract.deploy(@array![]).unwrap();
     addr
 }
@@ -153,6 +168,7 @@ pub fn deploy_grinta_hook(
     safe_engine_addr: ContractAddress,
     pid_addr: ContractAddress,
     oracle_addr: ContractAddress,
+    ekubo_core_addr: ContractAddress,
     grit_token: ContractAddress,
     wbtc_token: ContractAddress,
     usdc_token: ContractAddress,
@@ -163,6 +179,7 @@ pub fn deploy_grinta_hook(
     calldata.append(safe_engine_addr.into());
     calldata.append(pid_addr.into());
     calldata.append(oracle_addr.into());
+    calldata.append(ekubo_core_addr.into());
     calldata.append(grit_token.into());
     calldata.append(wbtc_token.into());
     calldata.append(usdc_token.into());
@@ -174,12 +191,14 @@ pub fn deploy_safe_manager(
     admin_addr: ContractAddress,
     safe_engine_addr: ContractAddress,
     join_addr: ContractAddress,
+    hook_addr: ContractAddress,
 ) -> (ContractAddress, ISafeManagerDispatcher) {
     let contract = declare("SafeManager").unwrap().contract_class();
     let mut calldata: Array<felt252> = array![];
     calldata.append(admin_addr.into());
     calldata.append(safe_engine_addr.into());
     calldata.append(join_addr.into());
+    calldata.append(hook_addr.into());
     let (addr, _) = contract.deploy(@calldata).unwrap();
     (addr, ISafeManagerDispatcher { contract_address: addr })
 }
@@ -211,8 +230,8 @@ pub fn deploy_full_system() -> GrintaSystem {
     // 1. Deploy mock WBTC
     let (wbtc_addr, wbtc) = deploy_mock_wbtc();
 
-    // 2. Deploy mock ekubo oracle
-    let oracle_addr = deploy_mock_ekubo_oracle();
+    // 2. Deploy OracleRelayer
+    let oracle_addr = deploy_oracle_relayer();
 
     // 3. Deploy SAFEEngine
     let (safe_engine_addr, safe_engine) = deploy_safe_engine(admin_addr);
@@ -223,15 +242,16 @@ pub fn deploy_full_system() -> GrintaSystem {
     // 5. Deploy PIDController (seed_proposer set later to hook)
     let (pid_addr, pid) = deploy_pid_controller(admin_addr, admin_addr);
 
-    // 6. Deploy GrintaHook
+    // 6. Deploy GrintaHook (ekubo_core = 0 in tests, skips set_call_points)
     let usdc_mock: ContractAddress = 'usdc'.try_into().unwrap();
+    let zero_core: ContractAddress = 0.try_into().unwrap();
     let (hook_addr, hook) = deploy_grinta_hook(
-        admin_addr, safe_engine_addr, pid_addr, oracle_addr,
+        admin_addr, safe_engine_addr, pid_addr, oracle_addr, zero_core,
         safe_engine_addr, wbtc_addr, usdc_mock,
     );
 
-    // 7. Deploy SafeManager
-    let (manager_addr, manager) = deploy_safe_manager(admin_addr, safe_engine_addr, join_addr);
+    // 7. Deploy SafeManager (with hook for keeper-less price updates)
+    let (manager_addr, manager) = deploy_safe_manager(admin_addr, safe_engine_addr, join_addr, hook_addr);
 
     // 8. Wire up permissions
     // SAFEEngine: set safe_manager, hook, collateral_join
@@ -252,9 +272,15 @@ pub fn deploy_full_system() -> GrintaSystem {
     cheat_caller_address(pid_addr, admin_addr, CheatSpan::TargetCalls(1));
     pid_admin.set_seed_proposer(hook_addr);
 
-    // Set initial BTC price via hook
-    cheat_caller_address(safe_engine_addr, hook_addr, CheatSpan::TargetCalls(1));
-    safe_engine.update_collateral_price(BTC_PRICE_WAD);
+    // Push BTC price to OracleRelayer → hook.update() will read it and push to SAFEEngine
+    let oracle_updater = IOracleUpdateDispatcher { contract_address: oracle_addr };
+    oracle_updater.update_price(wbtc_addr, usdc_mock, BTC_PRICE_WAD);
+
+    // Set timestamp > 0 so hook's throttle allows the first update (throttle checks now - last >= 60)
+    start_cheat_block_timestamp_global(100);
+
+    // Trigger hook.update() to read oracle and push collateral price to SAFEEngine
+    hook.update();
 
     GrintaSystem {
         wbtc_addr, wbtc, oracle_addr,

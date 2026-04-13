@@ -5,3 +5,6 @@ pub mod igrinta_hook;
 pub mod isafe_manager;
 pub mod iekubo;
 pub mod ierc20;
+pub mod iliquidation_engine;
+pub mod icollateral_auction_house;
+pub mod iaccounting_engine;

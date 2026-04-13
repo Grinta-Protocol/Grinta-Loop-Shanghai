@@ -3,7 +3,8 @@
 #[starknet::contract]
 pub mod SAFEEngine {
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess, StoragePointerWriteAccess};
-    use starknet::{ContractAddress, get_caller_address, get_block_timestamp};
+    use starknet::{ContractAddress, ClassHash, get_caller_address, get_block_timestamp};
+    use starknet::syscalls::replace_class_syscall;
     use grinta::types::{Safe, Health, WAD, RAY, wmul, wdiv, rmul, rpow};
 
     #[storage]
@@ -13,6 +14,8 @@ pub mod SAFEEngine {
         safe_manager: ContractAddress,
         hook: ContractAddress,
         collateral_join: ContractAddress,
+        liquidation_engine: ContractAddress,
+        accounting_engine: ContractAddress,
 
         // Safe accounting
         safes: Map<u64, Safe>,
@@ -120,8 +123,11 @@ pub mod SAFEEngine {
             let rate_pow = rpow(rate, time_delta);
             let old_price = self.redemption_price.read();
             let mut new_price = rmul(rate_pow, old_price);
-            if new_price == 0 {
-                new_price = 1; // never let it hit zero
+            // Floor: never let redemption price drop below 0.01 RAY ($0.01)
+            // This prevents the multiplication-by-zero death spiral
+            let min_price: u256 = RAY / 100; // 0.01 RAY
+            if new_price < min_price {
+                new_price = min_price;
             }
             self.redemption_price.write(new_price);
             self.redemption_price_update_time.write(now);
@@ -139,6 +145,14 @@ pub mod SAFEEngine {
 
         fn _assert_hook(self: @ContractState) {
             assert(get_caller_address() == self.hook.read(), 'SAFE: not hook');
+        }
+
+        fn _assert_liquidation_engine(self: @ContractState) {
+            assert(get_caller_address() == self.liquidation_engine.read(), 'SAFE: not liq engine');
+        }
+
+        fn _assert_accounting_engine(self: @ContractState) {
+            assert(get_caller_address() == self.accounting_engine.read(), 'SAFE: not acct engine');
         }
 
         /// Check that a safe is healthy: collateral_value / debt >= liquidation_ratio
@@ -251,7 +265,10 @@ pub mod SAFEEngine {
             }
             let time_delta: u256 = (now - last_update).into();
             let rate_pow = rpow(self.redemption_rate.read(), time_delta);
-            rmul(rate_pow, self.redemption_price.read())
+            let price = rmul(rate_pow, self.redemption_price.read());
+            // Apply the same floor as _update_redemption_price
+            let min_price: u256 = RAY / 100; // 0.01 RAY
+            if price < min_price { min_price } else { price }
         }
 
         fn get_redemption_rate(self: @ContractState) -> u256 {
@@ -349,6 +366,32 @@ pub mod SAFEEngine {
             self.emit(GritRepaid { safe_id, amount: repay_amount });
         }
 
+        // ---- Liquidation ----
+
+        fn confiscate(ref self: ContractState, safe_id: u64, collateral_amount: u256, debt_amount: u256) {
+            self._assert_liquidation_engine();
+
+            let mut safe = self.safes.read(safe_id);
+            assert(safe.collateral >= collateral_amount, 'SAFE: insuff col to seize');
+            assert(safe.debt >= debt_amount, 'SAFE: insuff debt to seize');
+
+            safe.collateral -= collateral_amount;
+            safe.debt -= debt_amount;
+            self.safes.write(safe_id, safe);
+
+            self.total_collateral.write(self.total_collateral.read() - collateral_amount);
+            self.total_debt.write(self.total_debt.read() - debt_amount);
+            // Note: GRIT is NOT burned here. The circulating GRIT from this debt
+            // must be recovered via auction and sent to AccountingEngine for burning.
+        }
+
+        // ---- Accounting ----
+
+        fn burn_system_coins(ref self: ContractState, from: ContractAddress, amount: u256) {
+            self._assert_accounting_engine();
+            self._burn(from, amount);
+        }
+
         // ---- Oracle/Hook updates ----
 
         fn update_collateral_price(ref self: ContractState, price: u256) {
@@ -391,6 +434,36 @@ pub mod SAFEEngine {
         fn set_hook(ref self: ContractState, hook: ContractAddress) {
             self._assert_admin();
             self.hook.write(hook);
+        }
+
+        fn set_liquidation_engine(ref self: ContractState, engine: ContractAddress) {
+            self._assert_admin();
+            self.liquidation_engine.write(engine);
+        }
+
+        fn set_accounting_engine(ref self: ContractState, engine: ContractAddress) {
+            self._assert_admin();
+            self.accounting_engine.write(engine);
+        }
+
+        /// Emergency admin reset: set redemption price and rate back to given values
+        fn reset_redemption_price(ref self: ContractState, price: u256, rate: u256) {
+            self._assert_admin();
+            self.redemption_price.write(price);
+            self.redemption_rate.write(rate);
+            self.redemption_price_update_time.write(get_block_timestamp());
+        }
+
+        /// Admin mint GRIT for testing (Sepolia only)
+        fn mint_grit(ref self: ContractState, to: ContractAddress, amount: u256) {
+            self._assert_admin();
+            self._mint(to, amount);
+        }
+
+        /// Upgrade the contract class hash (admin only)
+        fn replace_class(ref self: ContractState, new_class_hash: ClassHash) {
+            self._assert_admin();
+            replace_class_syscall(new_class_hash).unwrap();
         }
     }
 
@@ -455,6 +528,37 @@ pub mod SAFEEngine {
             let owner = get_caller_address();
             self.grit_allowances.write((owner, spender), amount);
             self.emit(Approval { owner, spender, value: amount });
+            true
+        }
+    }
+
+    // ========================================================================
+    // camelCase ERC20 wrappers (required by Argent X / Braavos wallet detection)
+    // ========================================================================
+
+    #[abi(embed_v0)]
+    impl GritERC20CamelImpl of grinta::interfaces::ierc20::IERC20Camel<ContractState> {
+        fn totalSupply(self: @ContractState) -> u256 {
+            self.grit_total_supply.read()
+        }
+
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+            self.grit_balances.read(account)
+        }
+
+        fn transferFrom(
+            ref self: ContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+        ) -> bool {
+            let caller = get_caller_address();
+            let allowed = self.grit_allowances.read((sender, caller));
+            assert(allowed >= amount, 'GRIT: insufficient allowance');
+            self.grit_allowances.write((sender, caller), allowed - amount);
+            let sender_bal = self.grit_balances.read(sender);
+            assert(sender_bal >= amount, 'GRIT: insufficient balance');
+            self.grit_balances.write(sender, sender_bal - amount);
+            let recipient_bal = self.grit_balances.read(recipient);
+            self.grit_balances.write(recipient, recipient_bal + amount);
+            self.emit(Transfer { from: sender, to: recipient, value: amount });
             true
         }
     }

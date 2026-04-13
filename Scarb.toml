@@ -13,6 +13,7 @@ sierra = true
 starknet = "2.14.0"
 openzeppelin_token = "1.0.0"
 openzeppelin_access = "1.0.0"
+openzeppelin_introspection = "1.0.0"
 
 [dev-dependencies]
 snforge_std = "0.53.0"

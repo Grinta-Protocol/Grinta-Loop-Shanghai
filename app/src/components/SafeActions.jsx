@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAccount, useSendTransaction } from '@starknet-react/core'
 import { ADDRESSES } from '../lib/contracts.js'
 import { parseBtcInput, parseBtcInputWad, parseGritInput, formatWad } from '../lib/format.js'
-import { useMaxBorrow } from '../hooks/useGrinta.js'
+import { useMaxBorrow, useGritBalance } from '../hooks/useGrinta.js'
 import './SafeActions.css'
 
 const TABS = ['deposit', 'withdraw', 'borrow', 'repay']
@@ -13,6 +13,7 @@ export default function SafeActions({ selectedSafe, onSuccess }) {
   const { address } = useAccount()
   const { sendAsync, isPending } = useSendTransaction({})
   const { maxBorrow } = useMaxBorrow(selectedSafe)
+  const { balance: gritBalance } = useGritBalance()
 
   const isBtcTab = tab === 'deposit' || tab === 'withdraw'
   const placeholder = isBtcTab ? '0.001' : '100.0'
@@ -133,6 +134,12 @@ export default function SafeActions({ selectedSafe, onSuccess }) {
         {tab === 'borrow' && maxBorrow != null && (
           <div className="action-info">
             Max borrow: {formatWad(maxBorrow)} GRIT
+          </div>
+        )}
+
+        {tab === 'repay' && gritBalance != null && (
+          <div className="action-info">
+            Available: {formatWad(gritBalance)} GRIT
           </div>
         )}
 

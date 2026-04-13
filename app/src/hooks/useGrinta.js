@@ -1,6 +1,6 @@
 import { useContract, useReadContract, useAccount, useProvider } from '@starknet-react/core'
 import { useState, useEffect, useCallback } from 'react'
-import { ADDRESSES, SAFE_ENGINE_ABI, SAFE_MANAGER_ABI } from '../lib/contracts.js'
+import { ADDRESSES, SAFE_ENGINE_ABI, SAFE_MANAGER_ABI, ERC20_ABI } from '../lib/contracts.js'
 
 // Read system-wide rates from SAFEEngine
 export function useSystemRates() {
@@ -142,4 +142,20 @@ export function useMaxBorrow(safeId) {
   })
 
   return { maxBorrow: data, isLoading }
+}
+
+// Get user's GRIT balance
+export function useGritBalance() {
+  const { address } = useAccount()
+
+  const { data, isLoading } = useReadContract({
+    address: ADDRESSES.safeEngine,
+    abi: ERC20_ABI,
+    functionName: 'balance_of',
+    args: address ? [address] : [],
+    enabled: !!address,
+    watch: true,
+  })
+
+  return { balance: data, isLoading }
 }

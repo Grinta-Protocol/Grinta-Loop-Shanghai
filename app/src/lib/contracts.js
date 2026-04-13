@@ -1,9 +1,17 @@
 // Contract addresses on Starknet Sepolia
 export const ADDRESSES = {
-  safeManager: '0x07aec9c3d46853af2a2c924b1cdd839ffe38ffdc5d174c44d34c537d24d8aae8',
-  safeEngine: '0x02f4f6c374c20ddf3ea5e59cc70f2ad4c2bfb5786ca6c146266f89f7da575421',
-  collateralJoin: '0x0362bd21cf4fd2ada59945e27c0fe10802dde0061e6aeeae0dd81b80669b4687',
-  wbtc: '0x04ab76b407a4967de3683d387c598188d436d22d51416e8c8783156625874e20',
+  // V8 — with Liquidation System (2026-04-02)
+  safeManager: '0x0338599c15350c06a1c81d86e1ea0e85047edbc1816b605af57d600e4a71dfb1',
+  safeEngine: '0x02a83e8f676210b5b62c8b94d0fa5a1d5a1a6fe893520e12035f436c6b2a3539',
+  collateralJoin: '0x03a24b3dde1fa5e2f8f4cf2ac525c18b8044890045a2ea79864a4ee7e05c7ba7',
+  wbtc: '0x0519dfe7e35cde74c6fbc2b9b6fa33eb00e35992a91e4ec1573fb9298a7e5685',
+  usdc: '0x07a713c569b2dab96a35c06c38a9e0304bf28359309ca21c6fa3a1a2988dd6ae',
+  pidController: '0x07422bde0f5dce7646e50d57cd65421e034c2ecce3694396a37b81ac20fd89c5',
+  grintaHook: '0x0030c357dda980355d051451fcc7d909ff61265fe2a310786815e699538106f6',
+  oracleRelayer: '0x0189bff9655517d5bc48422f771ef6c8bbee60a7cd797faaa18947a61666f715',
+  accountingEngine: '0x0386c7786bd7563fe0844b21005a74e9465de680a9b1e339d03ec1e3b0aacf43',
+  liquidationEngine: '0x07b6bb47ad6b36c7a9f9af346869bfe344f77326122c65734ea24b6f4e593e57',
+  collateralAuctionHouse: '0x045fa469b139a8d13fe6fca09375291135f997c5ac6646c218681028d86424fa',
 }
 
 // Minimal ABIs — only functions the frontend calls

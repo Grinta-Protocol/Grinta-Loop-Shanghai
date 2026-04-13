@@ -1,0 +1,41 @@
+{
+  "version": "V9",
+  "network": "sepolia",
+  "deployer": "0x072f0d2391f7ce9103d31a64b6a36e0fe8d32f908d2e183a02d9d46403b21ce2",
+  "contracts": {
+    "MockWBTC":               "0x0530e00b92e75cc7a5f95ffcacb6835167f23b0f646d34d4163ea9e979482e96",
+    "MockUSDC":               "0x03e977ae5de6e89dba8f188640f519477fade41cedef7fbbc279d86a44bf4874",
+    "OracleRelayer":          "0x004b92a6899e0aea5adfcdd9713e598d1ec05873e4a272adf94ce57558032c0f",
+    "SAFEEngine":             "0x012acdb5b9fd6743372f6e14e8af51dae1cd54bbcc578682656f4c75628d8c0c",
+    "CollateralJoin":         "0x007223fbb237fc6c0e6148d670c5d63a7acae9138261b64a887757100294b6c0",
+    "PIDController":          "0x05b4901f396b2d3062b38a594a8c61d513a3c32cf9f37be9f391e7dda998441d",
+    "GrintaHook":             "0x029d4fa992b69377bdc8fb9f98dd4fb255b7c82e62727be4d5badcd7da60122b",
+    "SafeManager":            "0x02cd8432c278a395c5e8b6dc19c783d08b6d01a51ca3477d3a6427e183b0c32a",
+    "AccountingEngine":       "0x07ff224c49f4b3942186624f49d9229b23f36c4a598dcdcea136fdecd5c94f60",
+    "LiquidationEngine":      "0x051aaa13c1b3ced5aeb61610319825d897fc0873934fe03cdfd6e413772f87d9",
+    "CollateralAuctionHouse": "0x078c1e7d3e6a3ded75974abd869c85d4173af03d512194752481b7f176f32623"
+  },
+  "ekubo": {
+    "Core":      "0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384",
+    "Positions": "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5",
+    "RouterV3":  "0x0045f933adf0607292468ad1c1dedaa74d5ad166392590e72676a34d01d7b763",
+    "Oracle":    "0x003ccf3ee24638dd5f1a51ceb783e120695f53893f6fd947cc2dcabb3f86dc65"
+  },
+  "pool": {
+    "token0":       "0x012acdb5b9fd6743372f6e14e8af51dae1cd54bbcc578682656f4c75628d8c0c",
+    "token1":       "0x03e977ae5de6e89dba8f188640f519477fade41cedef7fbbc279d86a44bf4874",
+    "fee":          0,
+    "tick_spacing":  1000,
+    "extension":    "0x029d4fa992b69377bdc8fb9f98dd4fb255b7c82e62727be4d5badcd7da60122b",
+    "initial_tick": "-27631000",
+    "bounds_lower": "-27726000",
+    "bounds_upper": "-27526000"
+  },
+  "verified": {
+    "market_price_wad": "999523710000000000",
+    "market_price_usd": "~$0.9995",
+    "collateral_price_wad": "60000000000000000000000",
+    "collateral_price_usd": "$60,000",
+    "swap_test": "100 GRIT → USDC, after_swap hook fired, price within bounds"
+  }
+}

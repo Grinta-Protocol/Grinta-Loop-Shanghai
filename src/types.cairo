@@ -1,3 +1,5 @@
+use starknet::ContractAddress;
+
 // ============================================================================
 // Fixed-point math constants (WAD = 18 decimals, RAY = 27 decimals)
 // ============================================================================
@@ -156,4 +158,14 @@ pub struct PIDControllerParams {
 pub struct ControllerGains {
     pub kp: i128,  // Proportional gain (WAD)
     pub ki: i128,  // Integral gain (WAD)
+}
+
+/// Collateral auction state
+#[derive(Copy, Drop, Serde, starknet::Store)]
+pub struct Auction {
+    pub collateral_amount: u256,     // Remaining collateral to sell (WAD)
+    pub debt_to_raise: u256,         // Remaining debt to cover with penalty (WAD)
+    pub start_time: u64,             // Auction start timestamp
+    pub safe_owner: ContractAddress, // Receives leftover collateral
+    pub settled: bool,               // Whether auction is complete
 }

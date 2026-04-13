@@ -158,7 +158,42 @@ export const TOOLS: ToolDef[] = [
     },
   },
 
+  {
+    name: "grinta_update",
+    description:
+      "Trigger a manual price/rate update via GrintaHook. Reads BTC/USD from OracleRelayer " +
+      "(throttled to 60s) and tries PID rate update (throttled to 3600s). " +
+      "Called automatically by SafeManager before SAFE operations.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "grinta_set_market_price",
+    description:
+      "Set the GRIT/USD market price in WAD (18 decimals). Anyone can call this. " +
+      "Enables keepers/agents to feed price without swapping. Example: '1.0' for $1.00.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        price: { type: "string", description: "GRIT price in USD (e.g. '1.0' for $1.00)" },
+      },
+      required: ["price"],
+    },
+  },
+
   // ---- Read tools ----
+  {
+    name: "grinta_get_market_price",
+    description:
+      "Get the current GRIT/USD market price from GrintaHook. " +
+      "Set by swaps on the Ekubo pool or via set_market_price.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "grinta_get_collateral_price_hook",
+    description:
+      "Get the BTC/USD collateral price cached in GrintaHook (from OracleRelayer).",
+    inputSchema: { type: "object", properties: {}, required: [] },
+  },
   {
     name: "grinta_get_position_health",
     description:

@@ -4,6 +4,8 @@ use starknet::ContractAddress;
 pub trait ICollateralJoin<TContractState> {
     fn join(ref self: TContractState, user: ContractAddress, amount: u256) -> u256;
     fn exit(ref self: TContractState, user: ContractAddress, amount: u256) -> u256;
+    /// Transfer seized collateral to a recipient (auction house). Called by LiquidationEngine.
+    fn seize(ref self: TContractState, to: ContractAddress, amount: u256) -> u256;
     fn get_collateral_token(self: @TContractState) -> ContractAddress;
     fn get_total_assets(self: @TContractState) -> u256;
     fn convert_to_internal(self: @TContractState, asset_amount: u256) -> u256;

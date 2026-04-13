@@ -1,6 +1,7 @@
 import { RpcProvider, Contract, num, type Abi } from "starknet";
 import { SAFE_MANAGER_ABI } from "./abi/safe-manager.js";
 import { SAFE_ENGINE_ABI } from "./abi/safe-engine.js";
+import { GRINTA_HOOK_ABI } from "./abi/grinta-hook.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -21,6 +22,7 @@ export interface GrintaConfig {
   safeManagerAddress: string;
   safeEngineAddress: string;
   collateralJoinAddress: string;
+  hookAddress: string;
   wbtcAddress: string;
 }
 
@@ -36,6 +38,7 @@ export function loadConfig(): GrintaConfig {
     safeManagerAddress: required("GRINTA_SAFE_MANAGER_ADDRESS"),
     safeEngineAddress: required("GRINTA_SAFE_ENGINE_ADDRESS"),
     collateralJoinAddress: required("GRINTA_COLLATERAL_JOIN_ADDRESS"),
+    hookAddress: required("GRINTA_HOOK_ADDRESS"),
     wbtcAddress: required("GRINTA_WBTC_ADDRESS"),
   };
 }
@@ -65,6 +68,7 @@ export function getProvider(): RpcProvider {
 
 let _safeManager: Contract | undefined;
 let _safeEngine: Contract | undefined;
+let _grintaHook: Contract | undefined;
 
 export function getSafeManager(): Contract {
   if (!_safeManager) {
@@ -86,6 +90,17 @@ export function getSafeEngine(): Contract {
     );
   }
   return _safeEngine;
+}
+
+export function getGrintaHook(): Contract {
+  if (!_grintaHook) {
+    _grintaHook = new Contract(
+      GRINTA_HOOK_ABI as unknown as Abi,
+      getConfig().hookAddress,
+      getProvider(),
+    );
+  }
+  return _grintaHook;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,19 +1,23 @@
 /// SafeManager — User and agent-facing safe management
 /// Handles open/close/deposit/withdraw/borrow/repay
 /// Agent-friendly: single-call operations, delegation, rich views
+/// Keeper-less: calls hook.update() before every SAFE operation that needs fresh prices
 #[starknet::contract]
 pub mod SafeManager {
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess, StoragePointerWriteAccess};
     use starknet::{ContractAddress, get_caller_address};
+    use core::num::traits::Zero;
     use grinta::types::{Health, wmul, wdiv};
     use grinta::interfaces::isafe_engine::{ISAFEEngineDispatcher, ISAFEEngineDispatcherTrait};
     use grinta::interfaces::icollateral_join::{ICollateralJoinDispatcher, ICollateralJoinDispatcherTrait};
+    use grinta::interfaces::igrinta_hook::{IGrintaHookDispatcher, IGrintaHookDispatcherTrait};
 
     #[storage]
     struct Storage {
         admin: ContractAddress,
         safe_engine: ContractAddress,
         collateral_join: ContractAddress,
+        hook: ContractAddress,
         // Agent delegation: (safe_id, agent_address) -> authorized
         agents: Map<(u64, ContractAddress), bool>,
     }
@@ -42,10 +46,12 @@ pub mod SafeManager {
         admin: ContractAddress,
         safe_engine: ContractAddress,
         collateral_join: ContractAddress,
+        hook: ContractAddress,
     ) {
         self.admin.write(admin);
         self.safe_engine.write(safe_engine);
         self.collateral_join.write(collateral_join);
+        self.hook.write(hook);
     }
 
     #[generate_trait]
@@ -70,6 +76,14 @@ pub mod SafeManager {
         fn _join(self: @ContractState) -> ICollateralJoinDispatcher {
             ICollateralJoinDispatcher { contract_address: self.collateral_join.read() }
         }
+
+        /// Call hook.update() to refresh prices before SAFE operations
+        fn _update_prices(ref self: ContractState) {
+            let hook_addr = self.hook.read();
+            if !hook_addr.is_zero() {
+                IGrintaHookDispatcher { contract_address: hook_addr }.update();
+            }
+        }
     }
 
     #[abi(embed_v0)]
@@ -83,6 +97,7 @@ pub mod SafeManager {
         }
 
         fn close_safe(ref self: ContractState, safe_id: u64) {
+            self._update_prices();
             self._assert_authorized(safe_id);
             let engine = self._engine();
             let safe = engine.get_safe(safe_id);
@@ -97,6 +112,7 @@ pub mod SafeManager {
         }
 
         fn deposit(ref self: ContractState, safe_id: u64, amount: u256) {
+            self._update_prices();
             self._assert_authorized(safe_id);
             let caller = get_caller_address();
             let join = self._join();
@@ -106,6 +122,7 @@ pub mod SafeManager {
         }
 
         fn withdraw(ref self: ContractState, safe_id: u64, amount: u256) {
+            self._update_prices();
             self._assert_authorized(safe_id);
             let caller = get_caller_address();
             let engine = self._engine();
@@ -115,12 +132,14 @@ pub mod SafeManager {
         }
 
         fn borrow(ref self: ContractState, safe_id: u64, amount: u256) {
+            self._update_prices();
             self._assert_authorized(safe_id);
             let engine = self._engine();
             engine.borrow(safe_id, amount);
         }
 
         fn repay(ref self: ContractState, safe_id: u64, amount: u256) {
+            self._update_prices();
             self._assert_authorized(safe_id);
             let engine = self._engine();
             engine.repay(safe_id, amount);
@@ -130,6 +149,7 @@ pub mod SafeManager {
         fn open_and_borrow(
             ref self: ContractState, collateral_amount: u256, borrow_amount: u256,
         ) -> u64 {
+            self._update_prices();
             let caller = get_caller_address();
             let engine = self._engine();
             let join = self._join();
@@ -185,6 +205,16 @@ pub mod SafeManager {
 
         fn is_authorized(self: @ContractState, safe_id: u64, agent: ContractAddress) -> bool {
             self.agents.read((safe_id, agent))
+        }
+    }
+
+    #[abi(per_item)]
+    #[generate_trait]
+    impl AdminImpl of AdminTrait {
+        #[external(v0)]
+        fn set_hook(ref self: ContractState, hook: ContractAddress) {
+            assert(get_caller_address() == self.admin.read(), 'MGR: not admin');
+            self.hook.write(hook);
         }
     }
 }

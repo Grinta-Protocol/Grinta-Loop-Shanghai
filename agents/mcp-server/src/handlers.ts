@@ -2,6 +2,7 @@ import {
   getConfig,
   getSafeManager,
   getSafeEngine,
+  getGrintaHook,
   parseBtcAmount,
   parseGritAmount,
   formatWad,
@@ -72,8 +73,16 @@ export async function handleToolCall(
         return handleAuthorizeAgent(args);
       case "grinta_revoke_agent":
         return handleRevokeAgent(args);
+      case "grinta_update":
+        return handleUpdate();
+      case "grinta_set_market_price":
+        return handleSetMarketPrice(args);
 
       // ---- Read tools (execute on-chain) ----
+      case "grinta_get_market_price":
+        return await handleGetMarketPrice();
+      case "grinta_get_collateral_price_hook":
+        return await handleGetCollateralPriceHook();
       case "grinta_get_position_health":
         return await handleGetPositionHealth(args);
       case "grinta_get_max_borrow":
@@ -259,9 +268,61 @@ function handleRevokeAgent(args: Record<string, unknown>): ToolResult {
   );
 }
 
+function handleUpdate(): ToolResult {
+  const cfg = getConfig();
+  return callResult(
+    "Trigger manual price/rate update via GrintaHook.",
+    [
+      {
+        contractAddress: cfg.hookAddress,
+        entrypoint: "update",
+        calldata: [],
+      },
+    ],
+  );
+}
+
+function handleSetMarketPrice(args: Record<string, unknown>): ToolResult {
+  const price = parseGritAmount(args.price as string); // reuse WAD parser
+  const cfg = getConfig();
+
+  return callResult(
+    `Set GRIT/USD market price to $${args.price}.`,
+    [
+      {
+        contractAddress: cfg.hookAddress,
+        entrypoint: "set_market_price",
+        calldata: [...u256Calldata(price)],
+      },
+    ],
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Read handlers — execute on-chain via provider (no key needed)
 // ---------------------------------------------------------------------------
+
+async function handleGetMarketPrice(): Promise<ToolResult> {
+  const hook = getGrintaHook();
+  const result = await hook.call("get_market_price", []);
+  const price = toBigInt(result as unknown);
+
+  return ok(
+    `GRIT/USD Market Price: ${formatUsd(price)}\n` +
+    `  (raw WAD: ${price})`,
+  );
+}
+
+async function handleGetCollateralPriceHook(): Promise<ToolResult> {
+  const hook = getGrintaHook();
+  const result = await hook.call("get_collateral_price", []);
+  const price = toBigInt(result as unknown);
+
+  return ok(
+    `BTC/USD Collateral Price (from Hook): ${formatUsd(price)}\n` +
+    `  (raw WAD: ${price})`,
+  );
+}
 
 async function handleGetPositionHealth(args: Record<string, unknown>): Promise<ToolResult> {
   const safeId = BigInt(args.safe_id as string);
@@ -317,21 +378,25 @@ async function handleGetSafe(args: Record<string, unknown>): Promise<ToolResult>
 
 async function handleGetRates(): Promise<ToolResult> {
   const engine = getSafeEngine();
+  const hook = getGrintaHook();
 
-  const [rPrice, rRate, cPrice, liqRatio] = await Promise.all([
+  const [rPrice, rRate, cPrice, liqRatio, mPrice] = await Promise.all([
     engine.call("get_redemption_price", []),
     engine.call("get_redemption_rate", []),
     engine.call("get_collateral_price", []),
     engine.call("get_liquidation_ratio", []),
+    hook.call("get_market_price", []),
   ]);
 
   const redemptionPrice = toBigInt(rPrice as unknown);
   const redemptionRate = toBigInt(rRate as unknown);
   const collateralPrice = toBigInt(cPrice as unknown);
   const liquidationRatio = toBigInt(liqRatio as unknown);
+  const marketPrice = toBigInt(mPrice as unknown);
 
   return ok(
     `Grinta Rates:\n` +
+    `  GRIT Market Price: ${formatUsd(marketPrice)}\n` +
     `  Redemption Price (target): ${formatRay(redemptionPrice, "USD")}\n` +
     `  Redemption Rate: ${formatAnnualRate(redemptionRate)} annual\n` +
     `  BTC/USD Price: ${formatUsd(collateralPrice)}\n` +

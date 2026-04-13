@@ -23,7 +23,7 @@ pub struct SwapParameters {
     pub amount: i129,
     pub is_token1: bool,
     pub sqrt_ratio_limit: u256,
-    pub skip_ahead: u32,
+    pub skip_ahead: u128,
 }
 
 /// Delta returned after swaps/updates
@@ -33,5 +33,17 @@ pub struct Delta {
     pub amount1: i129,
 }
 
-/// Call points bitflags — returned by before_initialize_pool to tell Ekubo which hooks to call
-pub const CALL_POINTS_AFTER_SWAP: u16 = 0x08; // bit 3
+/// Tick bounds for a position
+#[derive(Copy, Drop, Serde)]
+pub struct Bounds {
+    pub lower: i129,
+    pub upper: i129,
+}
+
+/// Parameters for updating a liquidity position
+#[derive(Copy, Drop, Serde)]
+pub struct UpdatePositionParameters {
+    pub salt: felt252,
+    pub bounds: Bounds,
+    pub liquidity_delta: i129,
+}

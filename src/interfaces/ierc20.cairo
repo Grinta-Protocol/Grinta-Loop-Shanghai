@@ -14,3 +14,13 @@ pub trait IERC20<TContractState> {
     ) -> bool;
     fn approve(ref self: TContractState, spender: ContractAddress, amount: u256) -> bool;
 }
+
+/// camelCase ERC20 interface — required by Argent X / Braavos wallet token detection
+#[starknet::interface]
+pub trait IERC20Camel<TContractState> {
+    fn totalSupply(self: @TContractState) -> u256;
+    fn balanceOf(self: @TContractState, account: ContractAddress) -> u256;
+    fn transferFrom(
+        ref self: TContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+    ) -> bool;
+}

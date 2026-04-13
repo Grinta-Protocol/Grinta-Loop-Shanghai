@@ -6,16 +6,9 @@ name = "grinta"
 version = "0.1.0"
 dependencies = [
  "openzeppelin_access",
+ "openzeppelin_introspection",
  "openzeppelin_token",
  "snforge_std",
-]
-
-[[package]]
-name = "grinta_scripts"
-version = "0.1.0"
-dependencies = [
- "grinta",
- "sncast_std",
 ]
 
 [[package]]
@@ -61,12 +54,6 @@ name = "openzeppelin_utils"
 version = "1.0.0"
 source = "registry+https://scarbs.xyz/"
 checksum = "sha256:fd348b31c4a4407add33adc3c2b8f26dca71dbd7431faaf726168f37a91db0c1"
-
-[[package]]
-name = "sncast_std"
-version = "0.53.0"
-source = "registry+https://scarbs.xyz/"
-checksum = "sha256:f003f8ca75271e1b8a555e746e6549a40fecdcb42907cd4b99af58a240529f28"
 
 [[package]]
 name = "snforge_scarb_plugin"

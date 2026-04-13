@@ -1,31 +1,31 @@
 # Grinta
 
-A PID-controlled stablecoin protocol on Starknet. Grinta uses a HAI-style redemption price mechanism with an Ekubo DEX hook that automatically updates rates on every swap — no keepers needed.
+A PID-controlled stablecoin protocol on Starknet. Grinta uses a HAI-style redemption price mechanism with an Ekubo DEX hook that automatically updates rates on every swap — only BTC/USD oracle pushes are manual.
 
 ## Architecture
 
 ```
-                    ┌─────────────┐
-                    │  Ekubo DEX  │
-                    │  (Grit/USDC │
-                    │    pool)    │
-                    └──────┬──────┘
-                           │ after_swap
-                    ┌──────▼──────┐
-                    │ GrintaHook  │──── reads TWAP from ────► Ekubo Oracle
-                    │ (Extension) │
-                    └──┬───────┬──┘
-           market price│       │collateral price
-                    ┌──▼───┐   │
-                    │ PID  │   │
-                    │Ctrl  │   │
-                    └──┬───┘   │
-            new rate   │       │
-                    ┌──▼───────▼──┐
-                    │  SAFEEngine  │ ◄── core ledger + Grit ERC20
-                    │              │     + redemption price/rate
-                    └──────┬──────┘
-                           │
+                     ┌─────────────┐
+                     │  Ekubo DEX  │
+                     │  (Grit/USDC │
+                     │    pool)    │
+                     └──────┬──────┘
+                            │ after_swap
+                     ┌──────▼──────┐       ┌───────────────┐
+                     │ GrintaHook  │◄──────│ OracleRelayer │◄─── keeper pushes
+                     │ (Extension) │       │ (BTC/USD x128)│     BTC/USD from
+                     └──┬───────┬──┘       └───────────────┘     CoinGecko etc.
+            market price│       │collateral price
+                     ┌──▼───┐   │
+                     │ PID  │   │
+                     │Ctrl  │   │
+                     └──┬───┘   │
+             new rate   │       │
+                     ┌──▼───────▼──┐
+                     │  SAFEEngine  │ ◄── core ledger + Grit ERC20
+                     │              │     + redemption price/rate
+                     └──────┬──────┘
+                            │
               ┌────────────┼────────────┐
               │            │            │
        ┌──────▼──┐  ┌──────▼──┐  ┌─────▼─────┐
@@ -35,104 +35,61 @@ A PID-controlled stablecoin protocol on Starknet. Grinta uses a HAI-style redemp
        └─────────┘  └─────────┘  └───────────┘
 ```
 
-**Key insight:** GrintaHook *is* the Ekubo extension. Every Grit/USDC swap automatically triggers a TWAP read, PID computation, and rate update. No off-chain keepers, no cron jobs — the protocol self-corrects through trading activity.
+**Key insight:** GrintaHook *is* the Ekubo extension. Every Grit/USDC swap automatically computes the GRIT price from swap amounts, reads BTC/USD from OracleRelayer, runs the PID, and updates the rate. The only manual input is pushing BTC/USD to OracleRelayer — everything else self-corrects through trading activity.
 
-## Contracts
+## Contracts (9 core + 2 mocks)
 
-| Contract | Lines | Description |
+| Contract | Lines | Role |
 |---|---|---|
-| **SAFEEngine** | 461 | Core ledger, Grit ERC20 token, HAI-style redemption price/rate mechanism |
-| **CollateralJoin** | 158 | WBTC custody, converts between 8-decimal assets and 18-decimal internal units |
-| **PIDController** | 374 | HAI-style proportional-integral controller with leaky integrator and noise barrier |
-| **GrintaHook** | 245 | Ekubo `after_swap` extension — reads TWAPs, computes PID rate, pushes to SAFEEngine |
-| **SafeManager** | 190 | User/agent-facing: open, deposit, borrow, repay, delegate — single-call `open_and_borrow` |
+| SAFEEngine | 565 | Core ledger, Grit ERC20, redemption price/rate, confiscation |
+| CollateralJoin | 188 | WBTC custody, decimal conversion, seizure |
+| PIDController | 382 | HAI-style PI with leaky integrator and noise barrier |
+| GrintaHook | 376 | Ekubo `after_swap` extension — price discovery + PID orchestration |
+| SafeManager | 220 | User/agent-facing: open, deposit, borrow, repay, delegate |
+| OracleRelayer | 95 | BTC/USD price feed (WAD + x128) |
+| LiquidationEngine | 246 | Permissionless liquidation, health check, auction kickoff |
+| CollateralAuctionHouse | 316 | Dutch auction for seized collateral |
+| AccountingEngine | 152 | Debt/surplus tracking, GRIT burn settlement |
 
-Total: ~1,812 lines (excluding tests and interfaces)
+Total: ~2,540 lines. Full mechanism design and parameters in [DESIGN.md](./DESIGN.md).
 
-## Sepolia Deployment
+## Sepolia Deployment (V9 — Current)
 
-| Contract | Address |
-|---|---|
-| MockWBTC | [`0x07c7d91d...f605c9`](https://sepolia.starkscan.co/contract/0x07c7d91d5cc1f88b40f8632c8b1bf96bdc69e22dabff8114ac6c13f5cbf605c9) |
-| SAFEEngine | [`0x041649a2...038c15`](https://sepolia.starkscan.co/contract/0x041649a23c3bc0d960b0de649fe96d1380199153c2b9fbb2c2b3b81792038c15) |
-| CollateralJoin | [`0x008657c5...24284f`](https://sepolia.starkscan.co/contract/0x008657c5bb4611a581adb20c7de2008f830df4c757dab169a3ee931aed24284f) |
-| PIDController | [`0x01cae0b0...6eec5`](https://sepolia.starkscan.co/contract/0x01cae0b0de880d26d09a52a4c6e33dcd189fa1bcf40986103d3c3eb46a66eec5) |
-| GrintaHook | [`0x07a17830...d9b14`](https://sepolia.starkscan.co/contract/0x07a17830f3aecf5a22ecfea9f3f88cb6eafd9abc425505b167755e21246d9b14) |
-| SafeManager | [`0x002a36bb...11b9d`](https://sepolia.starkscan.co/contract/0x002a36bbb5d7f8694f2f6ab9b376a691fe277f00d5977cae989452ca84011b9d) |
+All V9 addresses are in [`deployed_v9.json`](./deployed_v9.json).
 
-External dependencies on Sepolia:
-- Ekubo Oracle Extension: `0x003ccf3ee24638dd5f1a51ceb783e120695f53893f6fd947cc2dcabb3f86dc65`
-- USDC (bridged): `0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080`
+Pool: GRIT(token0)/USDC(token1), fee=0, tick_spacing=1000, extension=GrintaHook
+Init tick: **-27,631,000** (negative — see [INVARIANTS.md](./INVARIANTS.md) for why)
+Liquidity bounds: [-27,726,000, -27,526,000] (~$0.90 to ~$1.10)
 
-## How It Works
+Verified on-chain: market price ~$0.9995, full liquidation cycle (open → crash → liquidate → auction → settle).
 
-### Redemption Price Mechanism
-
-Grinta's stablecoin (Grit) targets $1 through a floating redemption price, not a hard peg:
-
-1. **Redemption price** starts at $1 and drifts over time based on the **redemption rate**
-2. The **PID controller** observes the market price vs redemption price deviation
-3. If Grit trades below target → rate increases → redemption price rises → incentivizes repaying debt → supply contracts
-4. If Grit trades above target → rate decreases → redemption price falls → incentivizes borrowing → supply expands
-
-### The Ekubo Hook
-
-Instead of relying on keepers to call `updateRate()`, GrintaHook registers as an Ekubo extension on the Grit/USDC pool. Every swap triggers:
-
-1. Read BTC/USDC TWAP from Ekubo Oracle → update collateral price
-2. Read Grit/USDC TWAP from Ekubo Oracle → get market price
-3. Feed market price + redemption price into PID controller → get new rate
-4. Push new collateral price and redemption rate to SAFEEngine
-
-A manual `update()` function is also available as a fallback when there's no trading activity.
-
-### Agent Delegation
-
-SafeManager supports delegating safe operations to agent addresses:
-
-```cairo
-// Owner delegates to an agent
-safe_manager.authorize_agent(safe_id, agent_address);
-
-// Agent can now deposit, borrow, repay on behalf of owner
-safe_manager.deposit(safe_id, amount);  // called by agent
-```
+External dependencies (Sepolia):
+- Ekubo Core: `0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384`
+- Ekubo Router V3: `0x0045f933adf0607292468ad1c1dedaa74d5ad166392590e72676a34d01d7b763`
+- Ekubo Positions: `0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5`
 
 ## Building
 
 ```bash
-# Build contracts
-scarb build
-
-# Run tests (20/20 passing)
-snforge test
-
-# Build deployment scripts
-cd scripts && scarb build
+scarb build          # Build contracts
+snforge test         # Run tests (70/70 passing)
 ```
 
 ## Deploying
 
-1. Set your deployer address in `scripts/src/addresses.cairo`
-2. Configure sncast account: `sncast account create`
-3. Run:
 ```bash
-cd scripts
-sncast --profile sepolia script run deploy_sepolia --package grinta_scripts
+chmod +x deploy_sepolia.sh
+./deploy_sepolia.sh  # Declares, deploys, wires permissions, registers hook, creates pool
 ```
 
-## PID Controller Parameters
+## Documentation
 
-| Parameter | Value | Description |
-|---|---|---|
-| Kp | 1.0 (WAD) | Proportional gain |
-| Ki | 0.5 (WAD) | Integral gain |
-| Noise barrier | 0.95 (WAD) | Min deviation before PID acts (5%) |
-| Integral period | 3600s | Cooldown between rate updates |
-| Leak | ~99.9997%/s | Integral decay rate (from HAI) |
-| Debt ceiling | 1,000,000 Grit | Max system-wide debt |
-| Liquidation ratio | 150% | Min collateral ratio |
-| Initial BTC price | $60,000 | Set at deployment |
+| File | Contents |
+|---|---|
+| [DESIGN.md](./DESIGN.md) | Full mechanism design, math, PID parameters, liquidation system |
+| [INVARIANTS.md](./INVARIANTS.md) | Critical invariants and failure modes discovered during deployment |
+| [ORACLE_DESIGN.md](./ORACLE_DESIGN.md) | Oracle architecture, price feeds, future Ekubo TWAP research |
+| [PROTOCOL_STATUS.md](./PROTOCOL_STATUS.md) | What's built, what's next, roadmap |
 
 ## Dependencies
 
