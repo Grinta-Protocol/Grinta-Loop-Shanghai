@@ -72,16 +72,35 @@ reacting to the same data the contract already saw.
 - React to BTC drops EARLY — don't wait for the depeg to show up.
 - Consider the INTEGRAL term — if it's already large, be careful with KI increases.
 
-Respond ONLY with valid JSON in this exact format:
-{
-  "action": "hold" | "adjust" | "adjust_emergency",
-  "new_kp": <number in WAD, e.g. 2500000000000000000 for 2.5>,
-  "new_ki": <number in WAD, e.g. 2000000000000000 for 0.002>,
-  "is_emergency": <boolean>,
-  "reasoning": "<1-2 sentence explanation referencing BTC price and/or peg deviation>"
-}
+## Response format — CRITICAL
+Respond ONLY with valid JSON. No markdown, no explanation outside the JSON.
 
-If action is "hold", new_kp and new_ki can be omitted.`;
+Values for new_kp and new_ki MUST be RAW INTEGER STRINGS — the on-chain representation.
+Multiply your human value by 1e18 (1000000000000000000).
+
+Conversion table:
+  KP 1.4 = 1400000000000000000
+  KP 1.8 = 1800000000000000000
+  KP 2.0 = 2000000000000000000
+  KP 2.3 = 2300000000000000000
+  KP 2.5 = 2500000000000000000
+  KP 2.6 = 2600000000000000000
+  KI 0.001 = 1000000000000000
+  KI 0.002 = 2000000000000000
+  KI 0.005 = 5000000000000000
+  KI 0.01  = 10000000000000000
+
+WRONG: "new_kp": 2.5
+CORRECT: "new_kp": 2500000000000000000
+
+Example HOLD response:
+{"action":"hold","is_emergency":false,"reasoning":"BTC stable at $59.8k, deviation 0.03% — no action needed."}
+
+Example ADJUST response:
+{"action":"adjust","new_kp":2300000000000000000,"new_ki":2000000000000000,"is_emergency":false,"reasoning":"BTC down 5%, pre-positioning KP from 2.0 to 2.3 before depeg materializes."}
+
+Example EMERGENCY response:
+{"action":"adjust_emergency","new_kp":2500000000000000000,"new_ki":3000000000000000,"is_emergency":true,"reasoning":"BTC crashed 15%, off-chain shows further decline. Boosting KP to 2.5 with emergency cooldown."}`;
 
 // ---- Reasoning Engine ----
 
@@ -108,8 +127,8 @@ export class ReasoningEngine {
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.1, // Low temperature for consistent decisions
-        max_tokens: 500,
+        temperature: 0.1,
+        max_tokens: 2000, // GLM-5.1 uses reasoning tokens internally — needs headroom
       });
 
       const content = response.choices[0]?.message?.content;
@@ -181,9 +200,9 @@ What is your decision?`;
         };
       }
 
-      // Parse KP/KI — accept both string and number
-      const newKp = BigInt(String(parsed.new_kp));
-      const newKi = BigInt(String(parsed.new_ki));
+      // Parse KP/KI — accept raw WAD integers or float (with auto-conversion)
+      const newKp = this.parseWadValue(parsed.new_kp);
+      const newKi = this.parseWadValue(parsed.new_ki);
 
       return {
         action,
@@ -195,6 +214,21 @@ What is your decision?`;
     } catch (error) {
       return this.fallbackDecision(`Failed to parse LLM JSON: ${content.slice(0, 200)}`);
     }
+  }
+
+  /**
+   * If the LLM returns a float (e.g. 2.5) instead of a WAD integer,
+   * detect it and multiply by 1e18. Otherwise parse as BigInt directly.
+   */
+  private parseWadValue(val: unknown): bigint {
+    const num = Number(val);
+    // If the value is small enough to be a human-readable float (< 1e15),
+    // treat it as a float and convert to WAD. Otherwise it's already WAD.
+    if (num < 1e15 && num > 0) {
+      const cents = Math.round(num * 1e18);
+      return BigInt(cents);
+    }
+    return BigInt(String(val));
   }
 
   private fallbackDecision(reason: string): AgentDecision {
