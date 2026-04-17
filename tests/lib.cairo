@@ -11,3 +11,6 @@ mod test_accounting_engine;
 mod test_auction_house;
 mod test_liquidation_engine;
 mod test_liquidation_integration;
+mod test_parameter_guard;
+mod test_agent_integration;
+mod test_demo_replay;

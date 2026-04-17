@@ -15,11 +15,11 @@ pub mod GrintaHook {
         IEkuboCoreDispatcher, IEkuboCoreDispatcherTrait, CallPoints,
     };
 
-    // Minimum seconds between collateral price updates
-    const PRICE_UPDATE_INTERVAL: u64 = 60; // 1 minute
-
-    // Minimum seconds between PID rate updates (matches PID controller cooldown)
-    const RATE_UPDATE_INTERVAL: u64 = 3600; // 1 hour
+    // Default throttles — actual values stored in `price_update_interval` /
+    // `rate_update_interval` storage so admin can shorten them for demo runs
+    // without redeploying the hook.
+    const DEFAULT_PRICE_UPDATE_INTERVAL: u64 = 60;   // 1 minute
+    const DEFAULT_RATE_UPDATE_INTERVAL: u64 = 3600;  // 1 hour
 
     // Scale factor: USDC has 6 decimals, GRIT has 18 decimals
     // To get price in WAD: |usdc_amount| * 1e(18+18-6) / |grit_amount| = |usdc| * 1e30 / |grit|
@@ -55,6 +55,10 @@ pub mod GrintaHook {
         // Separate throttle timestamps
         last_price_update_time: u64,       // Last collateral price update
         last_rate_update_time: u64,        // Last PID rate update
+
+        // Configurable throttles (admin-controlled, defaults set in constructor)
+        price_update_interval: u64,
+        rate_update_interval: u64,
     }
 
     #[event]
@@ -103,6 +107,8 @@ pub mod GrintaHook {
         self.grit_token.write(grit_token);
         self.wbtc_token.write(wbtc_token);
         self.usdc_token.write(usdc_token);
+        self.price_update_interval.write(DEFAULT_PRICE_UPDATE_INTERVAL);
+        self.rate_update_interval.write(DEFAULT_RATE_UPDATE_INTERVAL);
     }
 
     // ========================================================================
@@ -143,7 +149,7 @@ pub mod GrintaHook {
         /// Read BTC/USDC from mock oracle, push to SAFEEngine. Throttled to PRICE_UPDATE_INTERVAL.
         fn _update_collateral_price(ref self: ContractState) {
             let now = get_block_timestamp();
-            if now - self.last_price_update_time.read() < PRICE_UPDATE_INTERVAL {
+            if now - self.last_price_update_time.read() < self.price_update_interval.read() {
                 return;
             }
 
@@ -171,7 +177,7 @@ pub mod GrintaHook {
         /// Try to update PID rate. Only fires if RATE_UPDATE_INTERVAL elapsed AND we have a market price.
         fn _try_update_rate(ref self: ContractState) {
             let now = get_block_timestamp();
-            if now - self.last_rate_update_time.read() < RATE_UPDATE_INTERVAL {
+            if now - self.last_rate_update_time.read() < self.rate_update_interval.read() {
                 return;
             }
 
@@ -328,6 +334,14 @@ pub mod GrintaHook {
         fn get_last_update_time(self: @ContractState) -> u64 {
             self.last_price_update_time.read()
         }
+
+        fn get_price_update_interval(self: @ContractState) -> u64 {
+            self.price_update_interval.read()
+        }
+
+        fn get_rate_update_interval(self: @ContractState) -> u64 {
+            self.rate_update_interval.read()
+        }
     }
 
     // ========================================================================
@@ -350,6 +364,18 @@ pub mod GrintaHook {
     fn set_ekubo_oracle(ref self: ContractState, oracle: ContractAddress) {
         self._assert_admin();
         self.ekubo_oracle.write(oracle);
+    }
+
+    #[external(v0)]
+    fn set_price_update_interval(ref self: ContractState, interval: u64) {
+        self._assert_admin();
+        self.price_update_interval.write(interval);
+    }
+
+    #[external(v0)]
+    fn set_rate_update_interval(ref self: ContractState, interval: u64) {
+        self._assert_admin();
+        self.rate_update_interval.write(interval);
     }
 
     /// Register this extension's call points with Ekubo Core.

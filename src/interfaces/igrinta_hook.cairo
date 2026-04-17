@@ -74,4 +74,6 @@ pub trait IGrintaHook<TContractState> {
     fn get_market_price(self: @TContractState) -> u256;
     fn get_collateral_price(self: @TContractState) -> u256;
     fn get_last_update_time(self: @TContractState) -> u64;
+    fn get_price_update_interval(self: @TContractState) -> u64;
+    fn get_rate_update_interval(self: @TContractState) -> u64;
 }

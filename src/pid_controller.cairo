@@ -379,4 +379,10 @@ pub mod PIDController {
         self._assert_admin();
         self.per_second_cumulative_leak.write(leak);
     }
+
+    #[external(v0)]
+    fn transfer_admin(ref self: ContractState, new_admin: ContractAddress) {
+        self._assert_admin();
+        self.admin.write(new_admin);
+    }
 }

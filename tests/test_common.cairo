@@ -7,6 +7,7 @@ use grinta::interfaces::ipid_controller::{IPIDControllerDispatcher};
 use grinta::interfaces::igrinta_hook::{IGrintaHookDispatcher, IGrintaHookDispatcherTrait};
 use grinta::interfaces::isafe_manager::{ISafeManagerDispatcher};
 use grinta::interfaces::ierc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use grinta::interfaces::iparameter_guard::{IParameterGuardDispatcher};
 
 // ============================================================================
 // Constants
@@ -93,6 +94,16 @@ pub trait IOracleUpdate<T> {
     );
 }
 
+#[starknet::interface]
+pub trait IPIDTransferAdmin<T> {
+    fn transfer_admin(ref self: T, new_admin: ContractAddress);
+}
+
+#[starknet::interface]
+pub trait IPIDSetNoise<T> {
+    fn set_noise_barrier(ref self: T, barrier: u256);
+}
+
 // ============================================================================
 // Deploy helpers
 // ============================================================================
@@ -163,6 +174,53 @@ pub fn deploy_pid_controller(
     (addr, IPIDControllerDispatcher { contract_address: addr })
 }
 
+pub fn deploy_pid_controller_custom(
+    admin_addr: ContractAddress, seed_proposer: ContractAddress,
+    kp: i128, ki: i128,
+) -> (ContractAddress, IPIDControllerDispatcher) {
+    let contract = declare("PIDController").unwrap().contract_class();
+    let mut calldata: Array<felt252> = array![];
+    calldata.append(admin_addr.into());
+    calldata.append(seed_proposer.into());
+    calldata.append(kp.into());
+    calldata.append(ki.into());
+    calldata.append(NOISE_BARRIER.low.into());
+    calldata.append(NOISE_BARRIER.high.into());
+    calldata.append(INTEGRAL_PERIOD_SIZE.into());
+    calldata.append(FEEDBACK_UPPER_BOUND.low.into());
+    calldata.append(FEEDBACK_UPPER_BOUND.high.into());
+    calldata.append(FEEDBACK_LOWER_BOUND.into());
+    calldata.append(PER_SECOND_LEAK.low.into());
+    calldata.append(PER_SECOND_LEAK.high.into());
+    let (addr, _) = contract.deploy(@calldata).unwrap();
+    (addr, IPIDControllerDispatcher { contract_address: addr })
+}
+
+pub fn deploy_parameter_guard(
+    admin_addr: ContractAddress,
+    agent_addr: ContractAddress,
+    pid_addr: ContractAddress,
+    policy: grinta::types::AgentPolicy,
+) -> (ContractAddress, IParameterGuardDispatcher) {
+    let contract = declare("ParameterGuard").unwrap().contract_class();
+    let mut calldata: Array<felt252> = array![];
+    calldata.append(admin_addr.into());
+    calldata.append(agent_addr.into());
+    calldata.append(pid_addr.into());
+    // AgentPolicy fields (Serde order matches struct declaration)
+    calldata.append(policy.kp_min.into());
+    calldata.append(policy.kp_max.into());
+    calldata.append(policy.ki_min.into());
+    calldata.append(policy.ki_max.into());
+    calldata.append(policy.max_kp_delta.into());
+    calldata.append(policy.max_ki_delta.into());
+    calldata.append(policy.cooldown_seconds.into());
+    calldata.append(policy.emergency_cooldown_seconds.into());
+    calldata.append(policy.max_updates.into());
+    let (addr, _) = contract.deploy(@calldata).unwrap();
+    (addr, IParameterGuardDispatcher { contract_address: addr })
+}
+
 pub fn deploy_grinta_hook(
     admin_addr: ContractAddress,
     safe_engine_addr: ContractAddress,
@@ -222,6 +280,55 @@ pub struct GrintaSystem {
     pub hook: IGrintaHookDispatcher,
     pub manager_addr: ContractAddress,
     pub manager: ISafeManagerDispatcher,
+}
+
+pub fn deploy_full_system_with_pid(kp: i128, ki: i128) -> GrintaSystem {
+    let admin_addr = admin();
+
+    let (wbtc_addr, wbtc) = deploy_mock_wbtc();
+    let oracle_addr = deploy_oracle_relayer();
+    let (safe_engine_addr, safe_engine) = deploy_safe_engine(admin_addr);
+    let (join_addr, join) = deploy_collateral_join(admin_addr, wbtc_addr, safe_engine_addr);
+    let (pid_addr, pid) = deploy_pid_controller_custom(admin_addr, admin_addr, kp, ki);
+
+    let usdc_mock: ContractAddress = 'usdc'.try_into().unwrap();
+    let zero_core: ContractAddress = 0.try_into().unwrap();
+    let (hook_addr, hook) = deploy_grinta_hook(
+        admin_addr, safe_engine_addr, pid_addr, oracle_addr, zero_core,
+        safe_engine_addr, wbtc_addr, usdc_mock,
+    );
+
+    let (manager_addr, manager) = deploy_safe_manager(admin_addr, safe_engine_addr, join_addr, hook_addr);
+
+    cheat_caller_address(safe_engine_addr, admin_addr, CheatSpan::TargetCalls(1));
+    safe_engine.set_safe_manager(manager_addr);
+    cheat_caller_address(safe_engine_addr, admin_addr, CheatSpan::TargetCalls(1));
+    safe_engine.set_hook(hook_addr);
+    cheat_caller_address(safe_engine_addr, admin_addr, CheatSpan::TargetCalls(1));
+    safe_engine.set_collateral_join(join_addr);
+
+    let join_admin = IJoinSetManagerDispatcher { contract_address: join_addr };
+    cheat_caller_address(join_addr, admin_addr, CheatSpan::TargetCalls(1));
+    join_admin.set_safe_manager(manager_addr);
+
+    let pid_admin = IPIDSetSeedDispatcher { contract_address: pid_addr };
+    cheat_caller_address(pid_addr, admin_addr, CheatSpan::TargetCalls(1));
+    pid_admin.set_seed_proposer(hook_addr);
+
+    let oracle_updater = IOracleUpdateDispatcher { contract_address: oracle_addr };
+    oracle_updater.update_price(wbtc_addr, usdc_mock, BTC_PRICE_WAD);
+
+    start_cheat_block_timestamp_global(100);
+    hook.update();
+
+    GrintaSystem {
+        wbtc_addr, wbtc, oracle_addr,
+        safe_engine_addr, safe_engine,
+        join_addr, join,
+        pid_addr, pid,
+        hook_addr, hook,
+        manager_addr, manager,
+    }
 }
 
 pub fn deploy_full_system() -> GrintaSystem {

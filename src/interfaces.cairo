@@ -8,3 +8,4 @@ pub mod ierc20;
 pub mod iliquidation_engine;
 pub mod icollateral_auction_house;
 pub mod iaccounting_engine;
+pub mod iparameter_guard;

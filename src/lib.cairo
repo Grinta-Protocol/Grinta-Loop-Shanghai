@@ -13,6 +13,8 @@ pub mod accounting_engine;
 pub mod collateral_auction_house;
 pub mod liquidation_engine;
 
+pub mod parameter_guard;
+
 pub mod grinta_meme_nft;
 
 pub mod mock;

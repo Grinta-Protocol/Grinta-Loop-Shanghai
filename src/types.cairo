@@ -160,6 +160,25 @@ pub struct ControllerGains {
     pub ki: i128,  // Integral gain (WAD)
 }
 
+/// Agent policy bounds for ParameterGuard
+/// Inspired by starknet-agentic SessionPolicy/SpendingPolicy patterns
+#[derive(Copy, Drop, Serde, starknet::Store)]
+pub struct AgentPolicy {
+    // Absolute bounds
+    pub kp_min: i128,                    // Absolute lower bound for Kp (WAD)
+    pub kp_max: i128,                    // Absolute upper bound for Kp (WAD)
+    pub ki_min: i128,                    // Absolute lower bound for Ki (WAD)
+    pub ki_max: i128,                    // Absolute upper bound for Ki (WAD)
+    // Per-call caps
+    pub max_kp_delta: u128,              // Max |change| per single update (WAD)
+    pub max_ki_delta: u128,              // Max |change| per single update (WAD)
+    // Two-tier cooldown
+    pub cooldown_seconds: u64,           // Normal cooldown between agent updates
+    pub emergency_cooldown_seconds: u64, // Shorter cooldown when agent declares emergency
+    // Budget
+    pub max_updates: u32,                // Total update budget (0 = unlimited)
+}
+
 /// Collateral auction state
 #[derive(Copy, Drop, Serde, starknet::Store)]
 pub struct Auction {
