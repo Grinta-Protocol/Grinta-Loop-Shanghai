@@ -1,17 +1,17 @@
-// Contract addresses on Starknet Sepolia
+// Contract addresses on Starknet Sepolia — V10
 export const ADDRESSES = {
-  // V8 — with Liquidation System (2026-04-02)
-  safeManager: '0x0338599c15350c06a1c81d86e1ea0e85047edbc1816b605af57d600e4a71dfb1',
-  safeEngine: '0x02a83e8f676210b5b62c8b94d0fa5a1d5a1a6fe893520e12035f436c6b2a3539',
-  collateralJoin: '0x03a24b3dde1fa5e2f8f4cf2ac525c18b8044890045a2ea79864a4ee7e05c7ba7',
-  wbtc: '0x0519dfe7e35cde74c6fbc2b9b6fa33eb00e35992a91e4ec1573fb9298a7e5685',
-  usdc: '0x07a713c569b2dab96a35c06c38a9e0304bf28359309ca21c6fa3a1a2988dd6ae',
-  pidController: '0x07422bde0f5dce7646e50d57cd65421e034c2ecce3694396a37b81ac20fd89c5',
-  grintaHook: '0x0030c357dda980355d051451fcc7d909ff61265fe2a310786815e699538106f6',
-  oracleRelayer: '0x0189bff9655517d5bc48422f771ef6c8bbee60a7cd797faaa18947a61666f715',
-  accountingEngine: '0x0386c7786bd7563fe0844b21005a74e9465de680a9b1e339d03ec1e3b0aacf43',
-  liquidationEngine: '0x07b6bb47ad6b36c7a9f9af346869bfe344f77326122c65734ea24b6f4e593e57',
-  collateralAuctionHouse: '0x045fa469b139a8d13fe6fca09375291135f997c5ac6646c218681028d86424fa',
+  safeManager: '0x07bdd82db8cb9a201c624190225cb62559a36034456824abe82de26e8fdb8798',
+  safeEngine: '0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272',
+  collateralJoin: '0x067c114f46dc4ba518fac3ef5fd081a26870870ca6d3b5637175e67dbfae1e2d',
+  wbtc: '0x051ef402b04791e28e95b09498a148a6b81499597d313f0e49afcee5a13267b4',
+  usdc: '0x016aff59b63314502da266d4347b2c1220c97e7865fce3afcf92fdd3ace93906',
+  pidController: '0x53916399f6c8caf0e1ded219f7d956b9bde8c0d070f17435d3179492b738dd3',
+  grintaHook: '0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147',
+  oracleRelayer: '0x013f7f3661d81b29c3a55b1022231161c68282537049738dd1676a855063f851',
+  accountingEngine: '0x04b3ef19a873e744c2f7f5304dda2cdb21a320c5ba39c215acf1e83187d9c516',
+  liquidationEngine: '0x07c28c1b2fc1ce34875476647da36ac198cab66aaf6a22630b88105bba725635',
+  collateralAuctionHouse: '0x05baca01ea18efd5463879220fad31ecb286a148110a6d8bf5a0ac614e450f85',
+  parameterGuard: '0x65e1098a1552e8aceec3a5217ecad40d223303e00070097abcc011deeb1ce1b',
 }
 
 // Minimal ABIs — only functions the frontend calls

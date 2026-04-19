@@ -7,6 +7,12 @@
 import { Account, RpcProvider, CallData } from "starknet";
 import { CONFIG } from "./config.js";
 
+export interface ExecutionResult {
+  txHash: string;
+  confirmedKp: bigint;
+  confirmedKi: bigint;
+}
+
 export class Executor {
   private provider: RpcProvider;
   private account: Account;
@@ -31,29 +37,57 @@ export class Executor {
    * KP and KI are signed i128 (WAD). On Starknet calldata, i128 is encoded as felt252.
    * Negative values need two's complement: value + 2^128.
    */
+  /**
+   * Submit propose_parameters tx with retry logic to handle nonce collisions.
+   */
   async proposeParameters(
     newKp: bigint,
     newKi: bigint,
     isEmergency: boolean
-  ): Promise<string> {
+  ): Promise<ExecutionResult> {
+    const MAX_RETRIES = 3;
+    const BASE_DELAY_MS = 2000;
+
     const calldata = [
       encodeI128(newKp),
       encodeI128(newKi),
       isEmergency ? "1" : "0",
     ];
 
-    const result = await this.account.execute({
-      contractAddress: CONFIG.PARAMETER_GUARD_ADDRESS,
-      entrypoint: "propose_parameters",
-      calldata,
-    });
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const result = await this.account.execute({
+          contractAddress: CONFIG.PARAMETER_GUARD_ADDRESS,
+          entrypoint: "propose_parameters",
+          calldata,
+        });
 
-    // Wait for tx acceptance
-    await this.provider.waitForTransaction(result.transaction_hash, {
-      successStates: ["ACCEPTED_ON_L2", "ACCEPTED_ON_L1"],
-    });
+        await this.provider.waitForTransaction(result.transaction_hash, {
+          successStates: ["ACCEPTED_ON_L2", "ACCEPTED_ON_L1"],
+        });
 
-    return result.transaction_hash;
+        return {
+          txHash: result.transaction_hash,
+          confirmedKp: newKp,
+          confirmedKi: newKi,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isNonceError = /nonce/i.test(msg) || /invalid transaction nonce/i.test(msg);
+
+        if (isNonceError && attempt < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * 2 ** attempt;
+          console.warn(
+            `[Executor] Nonce collision (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delay}ms...`
+          );
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw new Error("proposeParameters: exhausted retries");
   }
 }
 

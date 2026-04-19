@@ -1,4 +1,4 @@
-# Grinta — Nivel 2: Capa de Riesgo Agéntica (Agent-as-Governor)
+# Grinta — Agent-as-Governor: Gobernanza Agéntica para CDPs
 
 **Propuesta para el hackathon.** Grinta como el primer CDP donde un agente de IA no solo USA el protocolo — lo GOBIERNA.
 
@@ -6,19 +6,69 @@
 
 ## Resumen Ejecutivo
 
-Agregar una **capa de inteligencia artificial que gobierne los parámetros de riesgo del protocolo en tiempo real**, sin depender de votaciones de gobernanza lentas. En vez de que un humano o una DAO decida cada cuánto ajustar el ratio de colateral, las tasas de estabilidad, los gains del PID, o los umbrales de liquidación, un **agente RL (Reinforcement Learning) off-chain** observa el estado on-chain y propone ajustes dentro de límites predefinidos (guardrails).
+La gobernanza en DeFi está rota. Cuando BTC cae 20% en una hora, MakerDAO necesita DÍAS para votar un cambio de parámetros. Para cuando pasa la propuesta, las liquidaciones ya ocurrieron. Gauntlet cobra millones por recomendar parámetros — pero la ejecución sigue atada a votos humanos.
+
+Grinta invierte el modelo: **la DAO no vota parámetros, vota POLÍTICAS**. Un contrato `ParameterGuard` codifica los límites (bounds, cooldowns, budgets) dentro de los cuales un agente AI puede operar. El agente ejecuta en bloques, no en días. El humano define el campo de juego. La AI juega dentro de él.
 
 ---
 
-## ¿Por qué esto es diferenciador?
+## Unique Value Proposition — Dos Fases
 
-Hoy, **ningún protocolo CDP hace esto**. MakerDAO todavía usa gobernanza manual para parámetros de riesgo — un proceso que puede tardar días. Gauntlet y Chaos Labs hacen simulaciones off-chain y RECOMIENDAN parámetros, pero la ejecución sigue dependiendo de votos humanos. Grinta sería el primero donde **el agente propone Y ejecuta** (dentro de bounds seguros que el humano define).
+### Fase 1: ParameterGuard — Vote Policies, Not Parameters (Hackathon)
 
-| Protocolo | Decisión de riesgo | Ejecución | Latencia |
-|-----------|-------------------|-----------|----------|
-| MakerDAO | Governance vote | Manual | Días |
-| Aave (Gauntlet) | AI off-chain | Governance vote | Horas-días |
-| **Grinta** | **AI on-chain proposal** | **Contract auto-apply (bounded)** | **Bloques** |
+El problema central no es que la AI tome malas decisiones. Es que **no hay infraestructura on-chain para delegar decisiones de forma segura**. ParameterGuard resuelve esto.
+
+**El cambio de paradigma:**
+
+| Gobernanza Tradicional | Grinta |
+|------------------------|--------|
+| La DAO vota "cambiar KP a 2.5" | La DAO vota "KP puede estar entre 0.1 y 10.0" |
+| Cada cambio requiere propuesta + quorum + timelock | El agente ejecuta N cambios dentro de bounds |
+| Latencia: días a semanas | Latencia: bloques (segundos) |
+| El humano decide el QUÉ | El humano decide los LÍMITES, la AI decide el QUÉ |
+
+**Las políticas on-chain (AgentPolicy) que la DAO vota:**
+
+- **Absolute bounds**: rango permitido para cada parámetro (KP, KI)
+- **Per-call delta caps**: máximo cambio por update individual (no puede dar saltos bruscos)
+- **Two-tier cooldown**: cooldown normal (30s) y de emergencia (10s cuando |deviation| > threshold)
+- **Call budget**: máximo N updates antes de requerir renovación
+- **Emergency stop**: el admin humano puede frenar al agente en cualquier momento
+
+Esto es MÁS seguro que la gobernanza tradicional: el agente tiene un espacio de acción acotado y auditable (PDR events on-chain), mientras que una propuesta de gobernanza aprobada puede cambiar CUALQUIER parámetro a CUALQUIER valor sin bounds.
+
+**Comparación con el mercado:**
+
+| Protocolo | Decisión de riesgo | Ejecución | Latencia | Guardrails on-chain |
+|-----------|-------------------|-----------|----------|---------------------|
+| MakerDAO | Governance vote | Manual | Días | No |
+| Aave (Gauntlet) | AI off-chain | Governance vote | Horas-días | No |
+| Compound (OpenZeppelin) | Timelock + multisig | Semi-manual | Horas | Parcial |
+| **Grinta** | **AI proposal** | **Auto-apply (bounded)** | **Bloques** | **Full (ParameterGuard)** |
+
+### Fase 2: RL-Trained Small Model — Inference Barata y Rápida (Post-hackathon)
+
+La Fase 1 usa un LLM grande (GLM-5.1 / GPT-4 class) para el razonamiento del agente. Funciona, pero tiene dos problemas para producción:
+
+1. **Costo de inferencia**: ~$0.01-0.05 por decisión con modelos grandes
+2. **Latencia**: 2-5 segundos por llamada API al LLM
+
+La Fase 2 resuelve esto con **RL fine-tuning de Qwen 2.5 1.5B**:
+
+- **Entrenar con Reinforcement Learning** usando los logs de decisión del agente LLM grande como reward signal
+- **Reward function**: minimizar peg deviation + minimizar liquidaciones + penalizar oscillación
+- **Modelo target**: Qwen 2.5 1.5B — corre en inferencia local, sin API calls
+- **Resultado**: latencia <100ms, costo ~$0, modelo especializado en gobernanza PID
+
+```
+Fase 1 (hackathon):     LLM grande → reasoning → ParameterGuard
+Fase 2 (producción):    Qwen 1.5B (RL-tuned) → inference local → ParameterGuard
+                         ↑
+                    Entrenado con reward = f(peg_deviation, liquidations, oscillation)
+                    sobre simulaciones adversariales (MVF-Composer)
+```
+
+El ParameterGuard NO cambia entre fases. Eso es lo potente del diseño: el contrato es agnóstico al modelo. La DAO vota los bounds una vez, y el modelo se puede mejorar sin tocar la cadena. Podés pasar de GPT-4 a un modelo de 1.5B parámetros y las garantías de seguridad on-chain son EXACTAMENTE las mismas.
 
 ---
 
@@ -65,31 +115,40 @@ Hoy, **ningún protocolo CDP hace esto**. MakerDAO todavía usa gobernanza manua
 
 ---
 
-## Plan de Ejecución Hackathon
+## Plan de Ejecución
 
-### Priority 1 — Must Have (la demo)
-1. **ParameterGuard contract** (Cairo) — nuevo contrato con bounds por parámetro, timelock, función `propose_update()` y `execute_update()`
-2. **Agente RL off-chain** (Python, stable-baselines3) — PPO entrenado en simulación del protocolo Grinta
-3. **Oracle de observación** — bot que lee estado on-chain (Grinta + Ekubo) y lo pasa al agente
-4. **Integración con PIDController existente** — permitir que ParameterGuard actualice Kp/Ki del PID
-5. **Demo en Sepolia**: escenario de estrés → agente detecta → propone update → contrato lo aplica → peg se restaura más rápido que con params estáticos
+### Fase 1 — Hackathon Deliverables
+1. ~~**ParameterGuard contract** (Cairo)~~ Done — bounds, cooldowns, budget, emergency stop, PDR events
+2. ~~**LLM Agent off-chain** (TypeScript)~~ Done — Monitor → Reason (GLM-5.1) → Execute via Guard
+3. ~~**Integración con PIDController**~~ Done — Guard is PID admin, agent proposes through Guard
+4. ~~**Governance Dashboard**~~ Done — React + Express, live state, cheat controls, agent log
+5. **Demo en Sepolia**: crash oracle → agent detects → proposes KP boost → swap recalcs rate → dashboard shows diff
 
-### Priority 2 — Should Have (fortalece submission)
-6. Simulación adversarial estilo MVF-Composer para entrenar el agente
-7. Dashboard frontend mostrando: parámetros actuales, propuesta del agente, estado del timelock
-8. Auditoría: cada decisión del agente queda on-chain con razón (PDR pattern)
-9. Comparación A/B: 1,200 escenarios con vs sin agente (peg deviation, liquidation events)
+### Fase 2 — Post-hackathon (RL Small Model)
+6. Simulación adversarial (MVF-Composer) — 1,000+ escenarios de estrés
+7. Reward function: `R = -w1*|deviation| - w2*liquidations - w3*oscillation`
+8. RL fine-tune Qwen 2.5 1.5B con PPO usando logs del LLM como teacher signal
+9. Benchmark latency/cost/quality vs LLM grande
+10. Deploy modelo local — zero external API dependency
 
-### Priority 3 — Nice to Have
-10. LLM feedforward signal: agente LLM que predice de-pegs analizando sentimiento + on-chain
+### Nice to Have
 11. Multi-agente: un agente para PID, otro para liquidaciones, otro para stability fees
-12. Documento de arquitectura con path a producción
+12. LLM feedforward signal: predecir de-pegs analizando sentimiento + on-chain data
+13. Path a producción: ParameterGuard gobernado por DAO vote (Snapshot/Governor)
 
 ---
 
 ## Narrativa para Jueces
 
-> "Los stablecoins reflexivos como RAI resolvieron el problema de minimizar gobernanza pero crearon uno nuevo: los parámetros de riesgo siguen siendo estáticos o dependen de votos lentos. Cuando el mercado colapsa, para cuando la DAO vota, ya hubo liquidaciones masivas. Nos preguntamos: ¿qué pasaría si el protocolo pudiera gobernarse a sí mismo dentro de límites seguros? En Starknet, construimos el primer CDP donde un agente RL propone ajustes de parámetros de riesgo en tiempo real, y un contrato ParameterGuard los aplica automáticamente dentro de bounds que el humano define. Literatura reciente muestra **38.4% menos liquidaciones** bajo estrés con este approach. Nosotros lo hacemos nativo en Cairo, sobre Ekubo, con costos de gas subcent. El humano define los límites. La AI optimiza dentro de ellos."
+> "La gobernanza de DeFi tiene un problema de latencia que mata usuarios. Cuando BTC cae 20% en una hora, MakerDAO necesita días para votar un ajuste de parámetros. Para cuando llega, ya hubo liquidaciones masivas.
+>
+> Nuestra pregunta fue: ¿y si la DAO no votara parámetros, sino POLÍTICAS? Un rango de KP permitido, un máximo cambio por update, un cooldown entre decisiones, un presupuesto de N cambios. Codificamos eso en un contrato — ParameterGuard — y dejamos que un agente AI opere dentro de esos bounds en tiempo real.
+>
+> Resultado: el agente reacciona en bloques, no en días. Pero con las MISMAS garantías de seguridad que una DAO — porque los bounds están on-chain, son auditables, y el admin humano puede frenar al agente con un botón.
+>
+> Y lo mejor: el contrato es agnóstico al modelo. Hoy usamos un LLM grande para razonar. Mañana lo reemplazamos por un Qwen 1.5B entrenado con RL, sin tocar la cadena. Inference local, sub-100ms, cero costo. Las políticas on-chain no cambian.
+>
+> Literatura reciente muestra **38.4% menos liquidaciones** bajo estrés con AI-driven parameter tuning. Nosotros lo hacemos nativo en Cairo, sobre Ekubo, con gas subcent. El humano define las reglas. La AI juega dentro de ellas."
 
 ---
 
@@ -139,16 +198,40 @@ Hoy, **ningún protocolo CDP hace esto**. MakerDAO todavía usa gobernanza manua
 
 ## Dato Clave
 
-> Gauntlet y Chaos Labs cobran MILLONES por hacer off-chain lo que nosotros proponemos hacer on-chain con guardrails. La diferencia: ellos recomiendan, una DAO vota, tarda días. Nosotros: el agente propone, el contrato valida bounds, se aplica en bloques. El humano define los límites. La AI optimiza dentro de ellos.
+> Gauntlet y Chaos Labs cobran MILLONES por hacer off-chain lo que nosotros hacemos on-chain con guardrails. La diferencia: ellos recomiendan, una DAO vota, tarda días. Nosotros: el agente propone, el contrato valida bounds, se aplica en bloques. Y cuando el modelo mejora (Fase 2), el contrato NO cambia — las políticas son estables, el cerebro es upgradeable.
 
 ---
 
 ## Próximos Pasos
 
-1. Definir los bounds iniciales para cada parámetro (min/max seguros)
-2. Definir el espacio de observación del agente (qué variables on-chain lee)
-3. Diseñar la función de reward (peg deviation + liquidation count + protocol revenue)
-4. Armar el entorno de simulación basado en los contratos actuales (V9)
-5. Entrenar baseline PPO
-6. Escribir `ParameterGuard.cairo`
-7. Integrarlo con los contratos existentes (agregar `authorize_updater()` en cada uno)
+### Fase 1 (hackathon)
+1. ~~Escribir `ParameterGuard.cairo`~~ Done (17 tests passing)
+2. ~~Integrarlo con PIDController~~ Done (V10 deployment)
+3. ~~LLM Agent off-chain~~ Done (Monitor → Reason → Execute)
+4. ~~Frontend governance dashboard~~ Done (live on Sepolia)
+5. Demo pulido para jueces — crash oracle → agent reacts → rate recalculates
+
+### Fase 2 (post-hackathon)
+6. Simular 1,000+ escenarios adversariales (MVF-Composer framework)
+7. Diseñar reward function: `R = -w1*|peg_deviation| - w2*liquidations - w3*oscillation`
+8. Fine-tune Qwen 2.5 1.5B con PPO/DPO usando logs del LLM grande como teacher
+9. Benchmark: latencia, costo, y calidad de decisión vs LLM grande
+10. Deploy modelo local (ONNX/vLLM) — zero API dependency
+
+---
+
+## Current Status (2026-04-19)
+
+### Fase 1: Done
+- **ParameterGuard contract**: Cairo, 17 tests, deployed on Sepolia
+- **LLM Agent** (TypeScript): Monitor → Reason (GLM-5.1) → Execute, working end-to-end
+- **PIDController enhancement**: `set_integral_period_size()` setter, redeployed with 5s period
+- **Governance dashboard**: React + Express, live state polling, cheat controls, agent trigger, SSE log streaming
+- **87/87 Cairo tests passing** (70 core + 17 ParameterGuard)
+- **Agent proposed parameters on-chain** (updateCount=1)
+- **Separate agent wallet**: `0x1f8975...` with dedicated funding
+
+### Fase 2: Pending
+- RL training pipeline not started
+- Qwen 2.5 1.5B selected as target model (small enough for local inference, large enough for reasoning)
+- Reward function designed but not implemented

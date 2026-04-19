@@ -34,21 +34,11 @@ Your role: monitor BTC collateral price AND the GRIT stablecoin peg, then adjust
 - The PID controller computes a redemption rate based on GRIT's peg deviation to correct it.
 - **KP** (proportional gain): Controls immediate response. Higher KP = stronger correction.
 - **KI** (integral gain): Controls accumulated error. Higher KI = faster convergence but risk of oscillation.
-- The PID rate recomputes every ~3600 seconds (1 hour). Your value is PRE-POSITIONING gains BEFORE the next rate computation.
+- The PID rate recomputes periodically. Your value is PRE-POSITIONING gains BEFORE the next rate computation.
 
-## CRITICAL INSIGHT — your edge over the on-chain oracle
+## CRITICAL INSIGHT
 The BTC price is a LEADING indicator. The peg deviation is a LAGGING indicator.
 You should react to BTC drops BEFORE the depeg fully materializes.
-
-You receive TWO BTC readings:
-- **On-chain BTC**: what the contract sees (slow — oracle pushes are throttled).
-- **Off-chain BTC**: a high-frequency feed (Pyth/CEX-style). This is FRESHER.
-
-If the off-chain BTC is significantly LOWER than the on-chain BTC, the on-chain
-oracle is stale and the protocol is about to absorb a price drop it doesn't
-know about yet. THAT is the moment to pre-position KP — before the depeg
-materializes via swap pressure. Without this off-chain edge you would just be
-reacting to the same data the contract already saw.
 
 ## Your bounds (enforced on-chain by ParameterGuard)
 - KP range: [1.4, 2.6] WAD (1 WAD = 1e18)
@@ -150,19 +140,6 @@ export class ReasoningEngine {
     const proportionalHuman = Number(state.lastProportional) / 1e18;
     const integralHuman = Number(state.lastIntegral) / 1e18;
 
-    let offchainBlock = "";
-    if (state.offchain) {
-      const lagUsd = state.offchain.btcUsd - state.collateralPriceUsd;
-      const lagSign = lagUsd >= 0 ? "+" : "";
-      offchainBlock = `
-## Off-chain BTC feed (high frequency — your edge)
-- **Off-chain BTC**: $${state.offchain.btcUsd.toFixed(2)} (drop ${state.offchain.dropPct.toFixed(2)}% from $60k)
-- **Phase**: ${state.offchain.phase}
-- **Demo elapsed**: ${state.offchain.elapsedSec.toFixed(0)}s
-- **Lag vs on-chain**: ${lagSign}$${lagUsd.toFixed(2)} (off-chain minus on-chain — negative means off-chain is LOWER, oracle is stale)
-`;
-    }
-
     return `## Current Protocol State
 
 - **On-chain BTC (oracle)**: $${state.collateralPriceUsd.toFixed(2)}
@@ -176,7 +153,7 @@ export class ReasoningEngine {
 - **Last Integral Term**: ${integralHuman.toFixed(6)}
 - **Guard Update Count**: ${state.guardUpdateCount} / 20
 - **Guard Stopped**: ${state.guardStopped}
-${offchainBlock}
+
 What is your decision?`;
   }
 

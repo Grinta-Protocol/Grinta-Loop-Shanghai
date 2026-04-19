@@ -1,8 +1,7 @@
 /**
- * Decision Logger — PDR (Policy Decision Record) for demo visualization
+ * Decision Logger — PDR (Policy Decision Record)
  *
- * Outputs JSON lines to stdout and optionally to a file.
- * Each line is a structured decision record the demo UI can consume.
+ * Outputs JSON lines to stdout and to a file for audit trail.
  */
 
 import { appendFileSync } from "fs";
@@ -59,7 +58,7 @@ export function logDecision(record: DecisionRecord): void {
     console.log(`   error: ${record.error}`);
   }
 
-  // File — structured JSONL for demo UI
+  // File — structured JSONL audit trail
   try {
     appendFileSync(LOG_FILE, line + "\n");
   } catch {

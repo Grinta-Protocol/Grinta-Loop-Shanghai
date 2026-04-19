@@ -1,0 +1,38 @@
+{
+  "version": "V10",
+  "network": "sepolia",
+  "deployer": "0x072f0d2391f7ce9103d31a64b6a36e0fe8d32f908d2e183a02d9d46403b21ce2",
+  "agent": "0x27c0daed856e1883d7011e24fd173792268a90e7e7672df3f2b73152ef14905",
+  "contracts": {
+    "MockWBTC":               "0x051ef402b04791e28e95b09498a148a6b81499597d313f0e49afcee5a13267b4",
+    "MockUSDC":               "0x016aff59b63314502da266d4347b2c1220c97e7865fce3afcf92fdd3ace93906",
+    "OracleRelayer":          "0x013f7f3661d81b29c3a55b1022231161c68282537049738dd1676a855063f851",
+    "SAFEEngine":             "0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272",
+    "CollateralJoin":         "0x067c114f46dc4ba518fac3ef5fd081a26870870ca6d3b5637175e67dbfae1e2d",
+    "PIDController":          "0x069bd5d8cda116f142f9fb56fdd55310bce06274e0c5461166ce32c27ac91e0f",
+    "GrintaHook":             "0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147",
+    "SafeManager":            "0x07bdd82db8cb9a201c624190225cb62559a36034456824abe82de26e8fdb8798",
+    "AccountingEngine":       "0x04b3ef19a873e744c2f7f5304dda2cdb21a320c5ba39c215acf1e83187d9c516",
+    "LiquidationEngine":      "0x07c28c1b2fc1ce34875476647da36ac198cab66aaf6a22630b88105bba725635",
+    "CollateralAuctionHouse": "0x05baca01ea18efd5463879220fad31ecb286a148110a6d8bf5a0ac614e450f85",
+    "ParameterGuard":         "0x00341ecbc17e27a38d8c3478c9bf98bc4f6f0945de94b5d595f0f495311c83f5"
+  },
+  "ekubo": {
+    "Core":      "0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384",
+    "Positions": "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5",
+    "RouterV3":  "0x0045f933adf0607292468ad1c1dedaa74d5ad166392590e72676a34d01d7b763",
+    "Oracle":    "0x003ccf3ee24638dd5f1a51ceb783e120695f53893f6fd947cc2dcabb3f86dc65"
+  },
+  "pool": {
+    "token0":       "0x016aff59b63314502da266d4347b2c1220c97e7865fce3afcf92fdd3ace93906",
+    "token1":       "0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272",
+    "fee":          0,
+    "tick_spacing":  1000,
+    "extension":    "0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147",
+    "initial_tick": "+27631000",
+    "bounds_lower_mag": 27526000,
+    "bounds_lower_negative": false,
+    "bounds_upper_mag": 27726000,
+    "bounds_upper_negative": false
+  }
+}

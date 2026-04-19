@@ -375,6 +375,12 @@ pub mod PIDController {
     }
 
     #[external(v0)]
+    fn set_integral_period_size(ref self: ContractState, period_size: u64) {
+        self._assert_admin();
+        self.integral_period_size.write(period_size);
+    }
+
+    #[external(v0)]
     fn set_per_second_cumulative_leak(ref self: ContractState, leak: u256) {
         self._assert_admin();
         self.per_second_cumulative_leak.write(leak);

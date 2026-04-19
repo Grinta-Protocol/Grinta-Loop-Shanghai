@@ -2,10 +2,10 @@
 # Fetches BTC/USD from CoinGecko and pushes it to OracleRelayer on Starknet Sepolia
 set -euo pipefail
 
-# --- Addresses (V9 deployment) ---
-ORACLE_RELAYER="0x004b92a6899e0aea5adfcdd9713e598d1ec05873e4a272adf94ce57558032c0f"
-WBTC="0x0530e00b92e75cc7a5f95ffcacb6835167f23b0f646d34d4163ea9e979482e96"
-USDC="0x03e977ae5de6e89dba8f188640f519477fade41cedef7fbbc279d86a44bf4874"
+# --- Addresses (V10 deployment) ---
+ORACLE_RELAYER="0x013f7f3661d81b29c3a55b1022231161c68282537049738dd1676a855063f851"
+WBTC="0x051ef402b04791e28e95b09498a148a6b81499597d313f0e49afcee5a13267b4"
+USDC="0x016aff59b63314502da266d4347b2c1220c97e7865fce3afcf92fdd3ace93906"
 
 # --- Config ---
 RPC_URL="https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/w0WsoxSXn4Xq8DEGYETDW"

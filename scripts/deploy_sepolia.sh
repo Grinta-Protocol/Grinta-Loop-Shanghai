@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Grinta Protocol — Full Sepolia Deployment (V9 — with Pool + Swap Verification)
+# Grinta Protocol — Full Sepolia Deployment (V10 — Agentic Demo)
 # =============================================================================
-# Deploys ALL 11 contracts (9 core + 2 mocks), wires permissions, registers hook,
-# creates Ekubo pool with CORRECT tick sign, adds liquidity, and verifies swap
-# price discovery works (~$1 WAD market price from after_swap hook).
+# Deploys ALL 12 contracts (9 core + ParameterGuard + 2 mocks), wires permissions,
+# registers hook, creates Ekubo pool, adds liquidity, verifies swap, deploys
+# ParameterGuard with demo policy, and transfers PID admin to Guard.
+#
+# Changes from V9:
+#   - PID gains: demo-scale WAD values (KP=2.0, KI=0.002) instead of HAI prod
+#   - New: ParameterGuard contract with bounded agent governance
+#   - New: PID admin transferred to Guard (human retains control via proxy fns)
+#   - GrintaHook: configurable throttle intervals (storage vars, not constants)
 #
 # Usage:
 #   chmod +x deploy_sepolia.sh
@@ -28,9 +34,9 @@ EKUBO_ORACLE_EXT="0x003ccf3ee24638dd5f1a51ceb783e120695f53893f6fd947cc2dcabb3f86
 DEBT_CEILING="1000000000000000000000000"
 LIQUIDATION_RATIO="1500000000000000000"
 
-# PID Controller (HAI mainnet calibration)
-KP="154712579997"
-KI="13785"
+# PID Controller (demo-scale WAD values — matches agent prompt + test_demo_replay)
+KP="2000000000000000000"        # 2.0 WAD
+KI="2000000000000000"           # 0.002 WAD
 NOISE_BARRIER="995000000000000000"
 INTEGRAL_PERIOD="3600"
 FEEDBACK_UPPER="1000000000000000000000000000"
@@ -48,7 +54,21 @@ MAX_DISCOUNT="800000000000000000"
 DISCOUNT_RATE="999999833000000000000000000"
 MINIMUM_BID="10000000000000000000"
 
-OUTPUT_FILE="deployed_v9.json"
+# Agent wallet (for ParameterGuard registration)
+AGENT_ADDRESS="0x27c0daed856e1883d7011e24fd173792268a90e7e7672df3f2b73152ef14905"
+
+# ParameterGuard policy (matches test_demo_replay::demo_policy + agent system prompt)
+GUARD_KP_MIN="1400000000000000000"          # 1.4 WAD
+GUARD_KP_MAX="2600000000000000000"          # 2.6 WAD
+GUARD_KI_MIN="1000000000000000"             # 0.001 WAD
+GUARD_KI_MAX="10000000000000000"            # 0.01 WAD
+GUARD_MAX_KP_DELTA="500000000000000000"     # 0.5 WAD per call
+GUARD_MAX_KI_DELTA="2000000000000000"       # 0.002 WAD per call
+GUARD_COOLDOWN="300"                        # 5 min normal
+GUARD_EMERGENCY_COOLDOWN="60"               # 1 min emergency
+GUARD_MAX_UPDATES="20"                      # 20 total updates budget
+
+OUTPUT_FILE="deployed_v10.json"
 
 # Helper: extract address from sncast deploy output
 extract_address() {
@@ -124,7 +144,7 @@ call_fn() {
 }
 
 echo "============================================"
-echo "  Grinta Protocol — Sepolia Deployment V9"
+echo "  Grinta Protocol — Sepolia Deployment V10"
 echo "============================================"
 echo ""
 
@@ -134,7 +154,7 @@ echo ""
 echo ">>> PHASE 1: Declaring all contracts..."
 echo ""
 
-for contract in ERC20Mintable OracleRelayer SAFEEngine CollateralJoin PIDController GrintaHook SafeManager AccountingEngine CollateralAuctionHouse LiquidationEngine; do
+for contract in ERC20Mintable OracleRelayer SAFEEngine CollateralJoin PIDController GrintaHook SafeManager AccountingEngine CollateralAuctionHouse LiquidationEngine ParameterGuard; do
     echo "  Declaring $contract..."
     sncast --account "$ACCOUNT" declare \
         --url "$RPC_URL" \
@@ -167,6 +187,22 @@ DUMMY_AH="0x0000000000000000000000000000000000000000000000000000000000000001"
 LE=$(deploy_contract "LiquidationEngine" "$DEPLOYER, $SE, $CJ, $DUMMY_AH, $AE, $LIQ_PENALTY, $MAX_LIQ_QTY, $ON_AUCTION_LIMIT" "LiquidationEngine")
 AH=$(deploy_contract "CollateralAuctionHouse" "$DEPLOYER, $SE, $LE, $AE, $WBTC, $MIN_DISCOUNT, $MAX_DISCOUNT, $DISCOUNT_RATE, $MINIMUM_BID" "CollateralAuctionHouse")
 
+# ParameterGuard: constructor(admin, agent, pid_controller, policy: AgentPolicy)
+# sncast --arguments can't handle struct args (counts 12 flat values but expects 4 params).
+# Use --calldata with raw felts instead — struct fields serialize in declaration order.
+echo "  Deploying ParameterGuard..." >&2
+GUARD_RESULT=$(sncast --account "$ACCOUNT" deploy \
+    --url "$RPC_URL" \
+    --contract-name "ParameterGuard" \
+    -c $DEPLOYER $AGENT_ADDRESS $PID $GUARD_KP_MIN $GUARD_KP_MAX $GUARD_KI_MIN $GUARD_KI_MAX $GUARD_MAX_KP_DELTA $GUARD_MAX_KI_DELTA $GUARD_COOLDOWN $GUARD_EMERGENCY_COOLDOWN $GUARD_MAX_UPDATES 2>&1)
+GUARD=$(extract_address "$GUARD_RESULT")
+if [ -z "$GUARD" ]; then
+    echo "    FAILED: $GUARD_RESULT" >&2
+    exit 1
+fi
+echo "    ParameterGuard: $GUARD" >&2
+sleep 12
+
 echo ""
 echo "All contracts deployed."
 echo ""
@@ -190,6 +226,7 @@ invoke_fn "$CJ" "set_liquidation_engine" "$LE"   "CJ.set_liquidation_engine → 
 
 # PIDController
 invoke_fn "$PID" "set_seed_proposer"     "$HOOK" "PID.set_seed_proposer → GrintaHook"
+invoke_fn "$PID" "transfer_admin"        "$GUARD" "PID.transfer_admin → ParameterGuard"
 
 # LiquidationEngine — fix chicken-and-egg
 invoke_fn "$LE" "set_auction_house"      "$AH"   "LE.set_auction_house → CollateralAuctionHouse"
@@ -432,9 +469,10 @@ echo ">>> PHASE 10: Saving addresses..."
 
 cat > "$OUTPUT_FILE" << JSONEOF
 {
-  "version": "V9",
+  "version": "V10",
   "network": "sepolia",
   "deployer": "$DEPLOYER",
+  "agent": "$AGENT_ADDRESS",
   "contracts": {
     "MockWBTC":               "$WBTC",
     "MockUSDC":               "$USDC",
@@ -446,7 +484,8 @@ cat > "$OUTPUT_FILE" << JSONEOF
     "SafeManager":            "$MGR",
     "AccountingEngine":       "$AE",
     "LiquidationEngine":      "$LE",
-    "CollateralAuctionHouse": "$AH"
+    "CollateralAuctionHouse": "$AH",
+    "ParameterGuard":         "$GUARD"
   },
   "ekubo": {
     "Core":      "$EKUBO_CORE",
@@ -476,7 +515,7 @@ echo ""
 # SUMMARY
 # =============================================================================
 echo "============================================"
-echo "  DEPLOYMENT COMPLETE (V9)"
+echo "  DEPLOYMENT COMPLETE (V10)"
 echo "============================================"
 echo ""
 echo "  MockWBTC:               $WBTC"
@@ -490,9 +529,16 @@ echo "  SafeManager:            $MGR"
 echo "  AccountingEngine:       $AE"
 echo "  LiquidationEngine:      $LE"
 echo "  CollateralAuctionHouse: $AH"
+echo "  ParameterGuard:         $GUARD"
+echo ""
+echo "  Agent:  $AGENT_ADDRESS"
+echo "  PID admin: ParameterGuard (human retains proxy control)"
 echo ""
 echo "  Pool: $TOKEN0 / $TOKEN1"
 echo "  Tick: $TICK_DISPLAY | Bounds: $BOUNDS_DISPLAY"
 echo ""
 echo "  Market price: $MARKET_PRICE"
+echo ""
+echo "  PID gains: KP=$KP (2.0 WAD), KI=$KI (0.002 WAD)"
+echo "  Guard bounds: KP=[${GUARD_KP_MIN}, ${GUARD_KP_MAX}], KI=[${GUARD_KI_MIN}, ${GUARD_KI_MAX}]"
 echo ""

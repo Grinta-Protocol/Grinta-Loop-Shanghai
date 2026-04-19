@@ -8,7 +8,7 @@
 import { CONFIG } from "./config.js";
 import { Monitor, type ProtocolState } from "./monitor.js";
 import { ReasoningEngine, type AgentDecision } from "./reasoning.js";
-import { Executor } from "./executor.js";
+import { Executor, type ExecutionResult } from "./executor.js";
 import { logDecision, nextCycle, type DecisionRecord } from "./logger.js";
 
 class PIDAgent {
@@ -16,6 +16,7 @@ class PIDAgent {
   private reasoning: ReasoningEngine;
   private executor: Executor;
   private isRunning = false;
+  private lastConfirmedGains: { kp: bigint; ki: bigint } | undefined;
 
   constructor() {
     this.monitor = new Monitor();
@@ -54,7 +55,9 @@ class PIDAgent {
 
     let state: ProtocolState;
     try {
-      state = await this.monitor.getState();
+      // Pass confirmed gains from last tx to override stale RPC reads
+      state = await this.monitor.getState(this.lastConfirmedGains);
+      this.lastConfirmedGains = undefined; // consumed — next cycle reads fresh
     } catch (error) {
       console.error(`[Cycle ${cycle}] Failed to read state:`, error);
       return;
@@ -97,12 +100,16 @@ class PIDAgent {
       record.proposed_ki = decision.new_ki.toString();
 
       try {
-        const txHash = await this.executor.proposeParameters(
+        const result = await this.executor.proposeParameters(
           decision.new_kp,
           decision.new_ki,
           decision.is_emergency
         );
-        record.tx_hash = txHash;
+        record.tx_hash = result.txHash;
+        this.lastConfirmedGains = {
+          kp: result.confirmedKp,
+          ki: result.confirmedKi,
+        };
       } catch (error) {
         record.error = error instanceof Error ? error.message : String(error);
       }

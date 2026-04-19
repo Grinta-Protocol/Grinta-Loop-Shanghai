@@ -1,7 +1,7 @@
 # Grinta Protocol Status
 
 > Living document tracking what's built, what's next, and what could be added.
-> Last updated: 2026-04-07
+> Last updated: 2026-04-17
 
 ---
 
@@ -17,14 +17,15 @@ Full mechanism design: [DESIGN.md](./DESIGN.md)
 
 ## Built — 9 Core Contracts + 2 Mocks
 
-All contracts compile clean, **70/70 tests pass**. Deployed on Sepolia V9 with working e2e including full liquidation cycle.
+All contracts compile clean, **70/70 tests pass**. Deployed on Sepolia V9 with working e2e including full liquidation cycle. **V10 deployed with ParameterGuard + Agent demo infrastructure.**
 
 Contract details and line counts in [README.md](./README.md). Full mechanism design in [DESIGN.md](./DESIGN.md).
 
 | Phase | Contracts | Status |
 |---|---|---|
-| Phase 1 — Core | SAFEEngine, CollateralJoin, PIDController, GrintaHook, SafeManager, OracleRelayer | Deployed V9 |
+| Phase 1 — Core | SAFEEngine, CollateralJoin, PIDController, GrintaHook, SafeManager, OracleRelayer | Deployed V9 + V10 |
 | Phase 3 — Liquidation | LiquidationEngine, CollateralAuctionHouse, AccountingEngine | Deployed V9 |
+| Phase 4 — Agent | ParameterGuard | Deployed V10 |
 
 ### Shared Code
 
@@ -47,6 +48,32 @@ Verified on-chain:
 - Market price: ~$0.9995 (swap-based price discovery works)
 - Full liquidation cycle: open → crash BTC → liquidate → Dutch auction → settle debt
 - Post-settlement accounting: surplus = 3,900 GRIT (13% penalty profit), queued debt = 0
+
+---
+
+## Deployed (Sepolia V10) — Agent-as-Governor Demo
+
+All addresses in [`deployed_v10.json`](./deployed_v10.json).
+
+**Key changes from V9:**
+- Pool token ordering: USDC(token0) < GRIT(token1) — OPPOSITE of V9
+- Added `ParameterGuard` contract for bounded AI agent parameter governance
+- Added `set_integral_period_size()` setter to PIDController (was hardcoded 3600s)
+- Redeployed PIDController with `integral_period_size=5s` for fast demo cycles
+- **PID address**: `0x069bd5d8cda116f142f9fb56fdd55310bce06274e0c5461166ce32c27ac91e0f`
+
+**Demo infrastructure** (`demo/`, `agent/`):
+- **Feeder** (`demo/src/feeder.ts`): pushes CSV BTC prices to OracleRelayer
+- **Trader** (`demo/src/trader.ts`): executes Ekubo swaps creating depeg pressure per phase
+- **Agent** (`agent/`): LLM (GLM-5.1 via CommonStack) monitors state → reasons → proposes KP/KI via ParameterGuard
+- **Launcher** (`demo/src/launcher.ts`): orchestrates all three as child processes
+
+**Verified working:**
+- ✅ Feeder pushes prices correctly (7/7 in 60s demo)
+- ✅ Trader swaps execute (2 swaps in 60s)
+- ✅ Agent reads all on-chain state (8 contract calls)
+- ✅ Agent called LLM and submitted `propose_parameters` tx (updateCount=1)
+- ⚠️ Nonce collision between trader & agent (same wallet) — mitigated with retry logic in executor
 
 ---
 

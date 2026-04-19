@@ -8,6 +8,7 @@ sierra = true
 
 [[target.starknet-contract]]
 sierra = true
+casm = true
 
 [dependencies]
 starknet = "2.14.0"
