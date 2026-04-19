@@ -287,8 +287,15 @@ export default function Governance() {
               icon="∑"
             />
             <MetricCard
-              label="Redemption Rate" sublabel="per epoch"
-              value={state ? (state.redemptionRate === 1 ? '0%/s' : `${((state.redemptionRate - 1) * 100).toFixed(8)}%/s`) : '—'}
+              label="Redemption Rate" sublabel="annualized"
+              value={state ? (() => {
+                const rps = state.redemptionRate;
+                if (!rps || rps === 0) return '0%';
+                const annualRate = Math.exp(Math.log(rps) * 31536000) - 1;
+                const pct = annualRate * 100;
+                const sign = pct >= 0 ? '+' : '';
+                return Math.abs(pct) > 1000 ? `${sign}${pct.toFixed(0)}%` : `${sign}${pct.toFixed(2)}%`;
+              })() : '—'}
               icon="↗"
               trend={
                 state?.rateDirection === 'up' ? <span className="tone-success">▲</span>
