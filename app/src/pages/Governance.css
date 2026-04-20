@@ -149,9 +149,15 @@
 
 /* ── METRICS GRID ── */
 .metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
+  justify-content: center;
+}
+
+.metrics-grid > * {
+  flex: 1 0 220px;
+  max-width: calc(25% - 0.75rem);
 }
 
 .metric-card {
@@ -542,8 +548,8 @@
 
 /* ── RESPONSIVE ── */
 @media (max-width: 900px) {
-  .metrics-grid {
-    grid-template-columns: repeat(3, 1fr);
+  .metrics-grid > * {
+    max-width: calc(33.333% - 0.667rem);
   }
   .sim-buttons-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -567,8 +573,8 @@
   .header-title {
     font-size: 1.8rem;
   }
-  .metrics-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .metrics-grid > * {
+    max-width: calc(50% - 0.5rem);
   }
   .metric-value {
     font-size: 1.2rem;

@@ -94,7 +94,7 @@ async function readState() {
   const [marketPrice, collateralPrice, redemptionPrice, redemptionRate, gains, deviation] =
     await Promise.all([
       provider.callContract({ contractAddress: CFG.GRINTA_HOOK, entrypoint: "get_market_price" }).catch(() => ["0"]),
-      provider.callContract({ contractAddress: CFG.GRINTA_HOOK, entrypoint: "get_collateral_price" }).catch(() => ["0"]),
+      provider.callContract({ contractAddress: CFG.ORACLE_RELAYER, entrypoint: "get_price_wad", calldata: [CFG.WBTC, CFG.USDC] }).catch(() => ["0"]),
       provider.callContract({ contractAddress: CFG.SAFE_ENGINE, entrypoint: "get_redemption_price" }).catch(() => ["0"]),
       provider.callContract({ contractAddress: CFG.SAFE_ENGINE, entrypoint: "get_redemption_rate" }).catch(() => ["0"]),
       provider.callContract({ contractAddress: CFG.PID_CONTROLLER, entrypoint: "get_controller_gains" }).catch(() => undefined),

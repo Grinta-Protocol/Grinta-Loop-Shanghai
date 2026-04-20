@@ -295,11 +295,11 @@ export default function Governance() {
               label="Redemption Rate" sublabel="annualized"
               value={state ? (() => {
                 const rps = state.redemptionRate;
-                if (!rps || rps === 0) return '0%';
+                if (!rps || rps <= 0) return '+0.00%';
                 const annualRate = Math.exp(Math.log(rps) * 31536000) - 1;
                 const pct = annualRate * 100;
                 const sign = pct >= 0 ? '+' : '';
-                return Math.abs(pct) > 1000 ? `${sign}${pct.toFixed(0)}%` : `${sign}${pct.toFixed(2)}%`;
+                return `${sign}${pct.toFixed(2)}%`;
               })() : '—'}
               icon="↗"
               trend={
