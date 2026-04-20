@@ -271,6 +271,11 @@ export default function Governance() {
               icon="◎"
             />
             <MetricCard
+              label="Redemption Price" sublabel="target peg"
+              value={state ? `$${state.redemptionPrice.toFixed(4)}` : '—'}
+              icon="◎"
+            />
+            <MetricCard
               label="Deviation" sublabel="from peg"
               value={state ? `${state.deviationPct >= 0 ? '+' : ''}${state.deviationPct.toFixed(2)}%` : '—'}
               tone={devTone}

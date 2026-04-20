@@ -1,7 +1,7 @@
 # Grinta Protocol Status
 
 > Living document tracking what's built, what's next, and what could be added.
-> Last updated: 2026-04-17
+> Last updated: 2026-04-19
 
 ---
 
@@ -74,6 +74,39 @@ All addresses in [`deployed_v10.json`](./deployed_v10.json).
 - ✅ Agent reads all on-chain state (8 contract calls)
 - ✅ Agent called LLM and submitted `propose_parameters` tx (updateCount=1)
 - ⚠️ Nonce collision between trader & agent (same wallet) — mitigated with retry logic in executor
+
+---
+
+## Deployed (Sepolia V10.1) — Post-V10 Redeploy of PID + Guard
+
+All addresses in [`deployed_v10_1.json`](./deployed_v10_1.json).
+
+**Why a V10.1 exists:** after the initial V10 deploy, the `PIDController` and `ParameterGuard` were redeployed to widen the Guard's policy for demo purposes (V10 had KP bounded to [1.4, 2.6], too narrow for meaningful LLM movement). All other V10 contracts were reused as-is — the new PID and Guard were wired into the existing V10 infrastructure.
+
+**What changed vs V10:**
+
+| Component | V10 address | V10.1 address |
+|---|---|---|
+| PIDController | `0x069bd5d8...` | `0x053916399...` |
+| ParameterGuard | `0x00341ecbc...` | `0x065e1098a...` |
+| Agent wallet | `0x27c0daed...` | `0x01f8975c5...` |
+
+**What stayed:** SAFEEngine, CollateralJoin, GrintaHook, SafeManager, OracleRelayer, AccountingEngine, LiquidationEngine, CollateralAuctionHouse, MockWBTC, MockUSDC — all V10 addresses unchanged.
+
+**Guard policy (on-chain verified 2026-04-19):**
+- KP range: [0.1, 10.0] WAD (was [1.4, 2.6])
+- KI range: [0.0, 0.1] WAD (was [0.001, 0.01])
+- Max KP delta per update: 2.0 WAD (was 0.5)
+- Max KI delta per update: 0.2 WAD (was 0.002)
+- Cooldown: 5s normal, 3s emergency (was 300/60)
+- Max updates: 1000 (was 20)
+
+**On-chain verification (2026-04-19):**
+- `Guard.get_agent()` → matches `.env AGENT_ADDRESS` ✓
+- `Guard.get_update_count()` → 28 (agent has successfully proposed 28 times)
+- `PID.get_controller_gains()` → kp=10.0, ki=0.1 WAD (at Guard ceiling)
+
+**Known issue:** the agent's LLM prompt (in `app/server/index.ts`) states constraints that don't match on-chain reality — it claims `cooldown=30s, emergency=10s, max_kp_delta=1.0`, but on-chain values are `5s, 3s, 2.0`. Prompt needs a second pass to align with actual Guard policy. Also, the LLM was monotonically increasing KP (now at ceiling 10.0) because the old prompt didn't instruct to decrease on BTC pumps. The prompt has been simplified to handle both directions symmetrically.
 
 ---
 

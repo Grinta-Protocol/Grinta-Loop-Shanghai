@@ -151,37 +151,22 @@ Your role: monitor BTC collateral price AND the GRIT stablecoin peg, then adjust
 - Normal cooldown: 30 seconds
 - Emergency cooldown: 10 seconds
 
-## Decision framework
+## Decision framework (simple)
+- BTC PUMPING → DECREASE KP and KI (propose values LOWER than current)
+- BTC CRASHING → INCREASE KP and KI (propose values HIGHER than current)
+- BTC STABLE and deviation small → HOLD
 
-### When BTC CRASHES (price drops, "BTC Drop" is positive):
-- Error becomes positive → redemption price > market price → rate pushes GRIT price UP
-- You need HIGHER KP/KI to amplify the corrective rate
-1. **Drop < 3%, deviation < 1%**: HOLD
-2. **Drop 3-10%, peg drifting**: ADJUST — increase KP toward 3-5 WAD
-3. **Drop >10% OR deviation >= 5%**: ADJUST_EMERGENCY — aggressively boost KP toward 6-10 WAD
-
-### When BTC PUMPS (price rises, "BTC Drop" is negative):
-- The system is OVER-correcting. Redemption rate is too high.
-- You need LOWER KP/KI to reduce the corrective pressure
-1. **BTC rising and deviation < 1%**: HOLD — system is balanced
-2. **BTC pumped but KP is still elevated (> 2.5)**: ADJUST — DECREASE KP toward baseline (2.0 WAD)
-3. **BTC pumped significantly and KP is very high (> 5)**: ADJUST_EMERGENCY — aggressively DECREASE KP
-
-### General rules:
-- Baseline KP is 2.0 WAD. After any crisis, gradually return KP to baseline.
-- KI adjustments should be conservative (small increments of 0.001-0.005)
-- When DECREASING, also reduce KI toward 0.001 WAD
-- NEVER increase KP/KI when BTC is pumping and peg deviation is small
+Always propose changes relative to the CURRENT values shown in the user prompt — never jump to hardcoded numbers.
+Keep each change within the per-update cap so ParameterGuard accepts the tx.
 
 ## Response format
 Respond ONLY with valid JSON.
 Values for new_kp and new_ki are human-readable floats (e.g. 2.5, 0.003).
 
 Example HOLD: {"action":"hold","reasoning":"BTC stable, peg within tolerance."}
-Example INCREASE: {"action":"adjust","new_kp":3.5,"new_ki":0.005,"reasoning":"BTC down 8%, raising KP to strengthen correction."}
-Example DECREASE: {"action":"adjust","new_kp":2.0,"new_ki":0.001,"reasoning":"BTC recovered, reducing KP back to baseline."}
-Example EMERGENCY UP: {"action":"adjust_emergency","new_kp":7.0,"new_ki":0.008,"reasoning":"BTC crashed 20%, emergency boost."}
-Example EMERGENCY DOWN: {"action":"adjust_emergency","new_kp":2.0,"new_ki":0.001,"reasoning":"BTC pumped hard, KP way too high, emergency reduction."}`;
+Example INCREASE (crashing): {"action":"adjust","new_kp":<current_kp + step>,"new_ki":<current_ki + step>,"reasoning":"BTC dropping, increasing gains."}
+Example DECREASE (pumping): {"action":"adjust","new_kp":<current_kp - step>,"new_ki":<current_ki - step>,"reasoning":"BTC pumping, decreasing gains."}
+Example EMERGENCY: use "adjust_emergency" when the move must exceed the normal step cap.`;
 
 async function runAgentCycle() {
   log("Reading on-chain state...");
@@ -209,8 +194,14 @@ async function runAgentCycle() {
 - Current KI: ${state.ki.toFixed(6)} WAD
 - Last Proportional Term: ${state.lastProportional.toFixed(6)}
 
-IMPORTANT: If BTC is PUMPING and KP is above baseline (2.0), you should DECREASE KP/KI.
-What is your decision?`;
+## DECISION RULE (simple):
+- PUMPING → new_kp < current_kp AND new_ki < current_ki
+- DROPPING → new_kp > current_kp AND new_ki > current_ki
+- STABLE with small deviation → hold
+
+Propose values RELATIVE to current (current ± small step). Respect the per-update cap.
+
+What is your decision? (Respond ONLY with valid JSON)`;
 
   const response = await llm.chat.completions.create({
     model: CFG.LLM_MODEL,
