@@ -92,25 +92,31 @@ function getVal(obj: unknown, key: string | number): unknown {
 
 // Alchemy Starknet RPC intermittently fails `starknet_call` with -32001
 // when "latest" points at a block the node is still finalizing. Retry with
-// short backoff — the next block tick usually recovers within <1s.
+// backoff, then fall back to the last successful response for this label
+// so the dashboard never flickers to zero mid-demo.
+const RETRY_DELAYS_MS = [150, 300, 500, 800, 1200];
+const lastGood = new Map<string, string[]>();
+
 async function callWithRetry(
   label: string,
   call: { contractAddress: string; entrypoint: string; calldata?: string[] },
   fallback: string[] | undefined,
-  attempts = 3,
 ): Promise<string[] | undefined> {
   let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
+  for (let i = 0; i <= RETRY_DELAYS_MS.length; i++) {
     try {
-      return (await provider.callContract(call)) as unknown as string[];
+      const res = (await provider.callContract(call)) as unknown as string[];
+      lastGood.set(label, res);
+      return res;
     } catch (e) {
       lastErr = e;
-      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+      if (i < RETRY_DELAYS_MS.length) await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[i]));
     }
   }
   const msg = lastErr instanceof Error ? lastErr.message.split("\n")[0] : String(lastErr);
-  log(`RPC call failed: ${label} — ${msg.slice(0, 160)}`);
-  return fallback;
+  const cached = lastGood.get(label);
+  log(`RPC call failed: ${label}${cached ? " — using cached value" : ""} — ${msg.slice(0, 140)}`);
+  return cached ?? fallback;
 }
 
 async function readState() {
