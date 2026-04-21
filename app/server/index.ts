@@ -90,21 +90,44 @@ function getVal(obj: unknown, key: string | number): unknown {
 
 // ---- Read protocol state ----
 
+// Alchemy Starknet RPC intermittently fails `starknet_call` with -32001
+// when "latest" points at a block the node is still finalizing. Retry with
+// short backoff — the next block tick usually recovers within <1s.
+async function callWithRetry(
+  label: string,
+  call: { contractAddress: string; entrypoint: string; calldata?: string[] },
+  fallback: string[] | undefined,
+  attempts = 3,
+): Promise<string[] | undefined> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return (await provider.callContract(call)) as unknown as string[];
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+    }
+  }
+  const msg = lastErr instanceof Error ? lastErr.message.split("\n")[0] : String(lastErr);
+  log(`RPC call failed: ${label} — ${msg.slice(0, 160)}`);
+  return fallback;
+}
+
 async function readState() {
   const [marketPrice, collateralPrice, redemptionPrice, redemptionRate, gains, deviation] =
     await Promise.all([
-      provider.callContract({ contractAddress: CFG.GRINTA_HOOK, entrypoint: "get_market_price" }).catch(() => ["0"]),
-      provider.callContract({ contractAddress: CFG.ORACLE_RELAYER, entrypoint: "get_price_wad", calldata: [CFG.WBTC, CFG.USDC] }).catch(() => ["0"]),
-      provider.callContract({ contractAddress: CFG.SAFE_ENGINE, entrypoint: "get_redemption_price" }).catch(() => ["0"]),
-      provider.callContract({ contractAddress: CFG.SAFE_ENGINE, entrypoint: "get_redemption_rate" }).catch(() => ["0"]),
-      provider.callContract({ contractAddress: CFG.PID_CONTROLLER, entrypoint: "get_controller_gains" }).catch(() => undefined),
-      provider.callContract({ contractAddress: CFG.PID_CONTROLLER, entrypoint: "get_deviation_observation" }).catch(() => undefined),
+      callWithRetry("get_market_price", { contractAddress: CFG.GRINTA_HOOK, entrypoint: "get_market_price" }, ["0"]),
+      callWithRetry("oracle.get_price_wad", { contractAddress: CFG.ORACLE_RELAYER, entrypoint: "get_price_wad", calldata: [CFG.WBTC, CFG.USDC] }, ["0"]),
+      callWithRetry("get_redemption_price", { contractAddress: CFG.SAFE_ENGINE, entrypoint: "get_redemption_price" }, ["0"]),
+      callWithRetry("get_redemption_rate", { contractAddress: CFG.SAFE_ENGINE, entrypoint: "get_redemption_rate" }, ["0"]),
+      callWithRetry("get_controller_gains", { contractAddress: CFG.PID_CONTROLLER, entrypoint: "get_controller_gains" }, undefined),
+      callWithRetry("get_deviation_observation", { contractAddress: CFG.PID_CONTROLLER, entrypoint: "get_deviation_observation" }, undefined),
     ]);
 
-  const mp = toBigInt(marketPrice[0]);
-  const cp = toBigInt(collateralPrice[0]);
-  const rp = toBigInt(redemptionPrice[0]);
-  const rr = toBigInt(redemptionRate[0]);
+  const mp = toBigInt(marketPrice?.[0]);
+  const cp = toBigInt(collateralPrice?.[0]);
+  const rp = toBigInt(redemptionPrice?.[0]);
+  const rr = toBigInt(redemptionRate?.[0]);
   const kp = gains ? toSigned(gains[0]) : 0n;
   const ki = gains ? toSigned(gains[1]) : 0n;
   const lastProp = deviation ? toSigned(deviation[1]) : 0n;
