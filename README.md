@@ -5,37 +5,72 @@ A PID-controlled stablecoin protocol on Starknet. Grinta uses a HAI-style redemp
 ## Architecture
 
 ```
-                     ┌─────────────┐
-                     │  Ekubo DEX  │
-                     │  (Grit/USDC │
-                     │    pool)    │
-                     └──────┬──────┘
-                            │ after_swap
-                     ┌──────▼──────┐       ┌───────────────┐
-                     │ GrintaHook  │◄──────│ OracleRelayer │◄─── keeper pushes
-                     │ (Extension) │       │ (BTC/USD x128)│     BTC/USD from
-                     └──┬───────┬──┘       └───────────────┘     CoinGecko etc.
-          market price│       │collateral price
-                     ┌──▼───┐   │
-                     │ PID  │   │
-                     │Ctrl  │   │
-                     └──┬───┘   │
-              new rate   │       │
-                     ┌──▼───────▼──┐
-                     │  SAFEEngine  │ ◄── core ledger + Grit ERC20
-                     │              │     + redemption price/rate
-                     └──────┬──────┘
-                            │
-              ┌────────────┼────────────┐
-              │            │            │
-       ┌──────▼──┐  ┌──────▼──┐  ┌────▼─────┐
-       │Collateral│  │  Safe   │  │   Grit   │
-       │  Join    │  │ Manager │  │  (ERC20) │
-       │ (WBTC)  │  │         │  │          │
-       └─────────┘  └─────────┘  └───────────┘
+                           ┌──────────────────────────────────────────────┐
+                    ┌──────┤      Governance Agents Pool           ├───────┐
+                    │      │  ┌──────────┐  ┌──────────┐   │       │
+                    │      │  │ PID-RL  │  │ GPT-4/  │   │       │
+                    │      │  │ (1.5B) │  │Claude   │   │       │
+                    │      │  └────┬───┘  └────┬───┘   │       │
+                    │      │       │ propose  │       │       │
+                    └──────┼───────┴────┬────┴───────┼───────┘
+                           │           │            │
+                           ▼           │      propose (Kp, Ki)
+                    ┌──────────────┐  │      ┌────▼────────┐
+                    │ParameterGuard│◄─┴─────│ (any agent) │
+                    │ (bounds +    │        └─────────────┘
+                    │  apply)     │
+                    └──────┬──────┘
+                           │ new gains (Kp, Ki)
+                           ▼
+                      ┌─────────────┐
+                      │  Ekubo DEX  │
+                      │  (Grit/USDC │
+                      │    pool)    │
+                      └──────┬──────┘
+                             │ after_swap
+                      ┌──────▼──────┐       ┌───────────────┐
+                      │ GrintaHook  │◄──────│ OracleRelayer │◄─── keeper pushes
+                      │ (Extension) │       │ (BTC/USD x128)│     BTC/USD from
+                      └──┬───────┬──┘       └───────────────┘     CoinGecko etc.
+           market price│       │collateral price
+                      ┌──▼───┐   │
+                      │ PID  │   │
+                      │Ctrl  │   │
+                      └──┬───┘   │
+               new rate   │       │
+                      ┌──▼───────▼──┐
+                      │  SAFEEngine  │ ◄── core ledger + Grit ERC20
+                      │              │     + redemption price/rate
+                      └──────┬──────┘
+                             │
+               ┌────────────┼────────────┐
+               │            │            │
+        ┌──────▼──┐  ┌──────▼──┐  ┌────▼─────┐
+        │Collateral│  │  Safe   │  │   Grit  │
+        │  Join   │  │Manager │  │ (ERC20)│
+        │ (WBTC) │  │        │  │        │
+        └────────┘  └────────┘  └─────────┘
+               │            │
+               │    ┌──────▼──────┐
+               │    │Liquidation  │ ◄─── permissionless
+               ├───│Engine     │     health check
+               │    └──────┬──────┘
+               │         │
+               │    ┌───▼────┐
+               │    │Auction │ ◄─── Dutch auction
+               │    │House  │     collateral
+               │    └──────┘
+               │
+        ┌──────▼──────────┐
+        │ Accounting     │ ◄─── debt/surplus
+        │ Engine       │     tracking
+        └───────────────┘
 ```
 
-**Key insight:** GrintaHook *is* the Ekubo extension. Every Grit/USDC swap automatically computes the GRIT price from swap amounts, reads BTC/USD from OracleRelayer, runs the PID, and updates the rate. The only manual input is pushing BTC/USD to OracleRelayer — everything else self-corrects through trading activity.
+**Key components:**
+- **ParameterGuard** — validates and applies PID gains from any governance agent (local PID-RL or external LLMs)
+- **Governance Agents** — PID-RL (local, 1.5B) + external APIs (GPT-4, Claude) via ERC-8004
+- **Liquidation system** — LiquidationEngine + CollateralAuctionHouse + AccountingEngine
 
 ## Autonomous Governance: PID-RL Agent
 
@@ -70,7 +105,17 @@ The PID-RL model is a finetuned Qwen 2.5 1.5B that outputs valid JSON with PID t
 4. **Self-hosted** — governance data never leaves your infrastructure
 5. **Offline capable** — runs locally, no external API dependency
 
-## Contracts (9 core + 2 mocks)
+![PID-RL Agent Response to BTC Crash](agent_pid_chart.png)
+
+**Chart Description:** Multi-panel simulation of a -20% BTC crash scenario:
+
+1. **Panel 1 — Market Shock:** BTC crashes -20% at minute ~10, GRIT dips below $1.00 peg but recovers
+2. **Panel 2 — Agent Response:** Agent detects crash at minute ~10, spikes KP from 2.0 → 2.5 (+25%), then lowers as price stabilizes
+3. **Panel 3 — Redemption Rate:** With dynamic KP, rate peaks +25% higher than baseline, enabling faster peg recovery
+
+The agent intervention happens at the same timestamp as the market shock, creating a higher redemption rate that pulls GRIT back toward $1.00.
+
+## Contracts (10 core + 2 mocks)
 
 | Contract | Lines | Role |
 |---|---|---|
@@ -80,6 +125,7 @@ The PID-RL model is a finetuned Qwen 2.5 1.5B that outputs valid JSON with PID t
 | GrintaHook | 376 | Ekubo `after_swap` extension — price discovery + PID orchestration |
 | SafeManager | 220 | User/agent-facing: open, deposit, borrow, repay, delegate |
 | OracleRelayer | 95 | BTC/USD price feed (WAD + x128) |
+| ParameterGuard | ~150 | Governance: validates bounds, applies Kp/Ki from agents |
 | LiquidationEngine | 246 | Permissionless liquidation, health check, auction kickoff |
 | CollateralAuctionHouse | 316 | Dutch auction for seized collateral |
 | AccountingEngine | 152 | Debt/surplus tracking, GRIT burn settlement |
