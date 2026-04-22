@@ -1,0 +1,3 @@
+[submodule "pid_rl"]
+	path = pid_rl
+	url = https://github.com/Grinta-Protocol/qwen-rl-shanghai.git
