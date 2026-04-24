@@ -161,6 +161,262 @@
   display: flex;
   flex-direction: column;
   min-height: 400px;
+  position: relative;
+}
+
+/* Flip Card */
+.flip-container {
+  position: relative;
+  perspective: 1000px;
+  width: 100%;
+}
+
+.flip-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.65rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.flip-toggle:hover {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.flip-front,
+.flip-back {
+  transition: transform 0.6s;
+  backface-visibility: hidden;
+  width: 100%;
+}
+
+.flip-container:not(.flipped) .flip-front {
+  transform: rotateY(0deg);
+}
+.flip-container:not(.flipped) .flip-back {
+  transform: rotateY(180deg);
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.flip-container.flipped .flip-front {
+  transform: rotateY(-180deg);
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.flip-container.flipped .flip-back {
+  transform: rotateY(0deg);
+}
+
+/* Graph Styles */
+.graph-container {
+  background: var(--bg-muted);
+  border-radius: var(--radius);
+  padding: 1rem;
+  height: 100%;
+}
+
+.graph-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.graph-flip-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6rem;
+  cursor: pointer;
+}
+
+.graph-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.graph-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem;
+}
+
+.graph-card.full-width {
+  grid-column: 1 / -1;
+}
+
+.graph-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.3rem;
+}
+
+.graph-value {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.graph-bar {
+  height: 6px;
+  background: var(--bg-muted);
+  border-radius: 3px;
+  margin-top: 0.4rem;
+  position: relative;
+  overflow: visible;
+}
+
+.graph-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.graph-bar-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text-muted);
+  opacity: 0.3;
+}
+
+.graph-bar-marker {
+  position: absolute;
+  top: -4px;
+  width: 4px;
+  height: 14px;
+  background: var(--text);
+  border-radius: 2px;
+  transform: translateX(-50%);
+}
+
+.graph-detail {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+}
+
+.graph-terms {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.graph-term {
+  display: flex;
+  flex-direction: column;
+}
+
+.term-label {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+}
+
+.term-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.graph-formula {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.formula-title {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.3rem;
+}
+
+.formula {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.graph-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+}
+
+.graph-dashboard-container {
+  background: #0d0d0d;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* GrintaPIDDashboard compact */
+.grinta-dashboard {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 0.5rem;
+  background: #0d0d0d;
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.dashboard-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.panel {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  padding: 0.4rem;
+}
+
+.panel-title {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin-bottom: 0.25rem;
+}
+
+.brush-container {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  padding: 0.25rem;
+}
+
+.sidebar {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  padding: 0.4rem;
 }
 
 .content-left .section,

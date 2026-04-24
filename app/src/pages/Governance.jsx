@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import philosopherImg from '../assets/philosopher.png'
 import columnImg from '../assets/column.png'
+import { GrintaPIDDashboard } from '../components/GrintaPIDDashboard'
 import './Governance.css'
 
 const API = import.meta.env.VITE_API_URL || '/api'
@@ -43,7 +44,18 @@ function MetricCard({ label, sublabel, value, tone, icon, trend }) {
   )
 }
 
-/* ── Log Line ── */
+/* ── PID Graph visualization - GrintaPIDDashboard Live ── */
+function PidGraph({ state }) {
+  if (!state) {
+    return <div className="graph-empty">Waiting for state...</div>
+  }
+  
+  return (
+    <div className="graph-dashboard-container">
+      <GrintaPIDDashboard state={state} height={420} />
+    </div>
+  )
+}
 const LOG_ICONS = {
   monitor: '🔍',
   reason: '🧠',
@@ -152,13 +164,13 @@ function HistoryTable({ rows, archiveUrl }) {
 
 /* ── Main ── */
 export default function Governance() {
-  const [state, setState] = useState(null)
+const [state, setState] = useState(null)
   const [logs, setLogs] = useState([])
   const [history, setHistory] = useState([])
   const [archiveUrl, setArchiveUrl] = useState(null)
   const [loading, setLoading] = useState({})
   const [decision, setDecision] = useState(null)
-  const [tweetText, setTweetText] = useState("")
+  const [showGraph, setShowGraph] = useState(false) // flip state
   const logRef = useRef(null)
 
   const addLog = useCallback((entry) => {
@@ -380,28 +392,38 @@ export default function Governance() {
         </section>
 
         {/* ── COLUMNA CENTRO: Agent Reasoning ── */}
-        <div className="content-center">
-          {/* Agent Reasoning */}
-          <section className="section">
-            <div className="marble-card log-card">
-              <div className="log-titlebar">
-                <div className="titlebar-dots">
-                  <span className="dot dot-red" />
-                  <span className="dot dot-yellow" />
-                  <span className="dot dot-green" />
+        <div className={`content-center flip-container ${showGraph ? 'flipped' : ''}`}>
+          <button className="flip-toggle" onClick={() => setShowGraph(!showGraph)}>
+            {showGraph ? '📝 Terminal' : '📊 Graph'}
+          </button>
+          
+          <div className="flip-front">
+            {/* Agent Reasoning */}
+            <section className="section">
+              <div className="marble-card log-card">
+                <div className="log-titlebar">
+                  <div className="titlebar-dots">
+                    <span className="dot dot-red" />
+                    <span className="dot dot-yellow" />
+                    <span className="dot dot-green" />
+                  </div>
+                  <span className="titlebar-text mono">Agent Reasoning | Live deliberation | On Chain</span>
                 </div>
-                <span className="titlebar-text mono">Agent Reasoning | Live deliberation | On Chain</span>
+                <div className="log-scroll" ref={logRef}>
+                  {logs.length === 0 && (
+                    <p className="log-empty">The governor watches in silence…</p>
+                  )}
+                  {logs.map((entry) => (
+                    <LogLine key={entry.id} entry={entry} />
+                  ))}
+                </div>
               </div>
-              <div className="log-scroll" ref={logRef}>
-                {logs.length === 0 && (
-                  <p className="log-empty">The governor watches in silence…</p>
-                )}
-                {logs.map((entry) => (
-                  <LogLine key={entry.id} entry={entry} />
-                ))}
-              </div>
-            </div>
-          </section>
+            </section>
+          </div>
+
+          <div className="flip-back">
+            <PidGraph state={state} />
+          </div>
         </div>
 
         {/* ── COLUMNA DERECHA: Market Simulation ── */}

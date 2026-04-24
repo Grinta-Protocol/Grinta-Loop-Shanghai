@@ -1,0 +1,43 @@
+/**
+ * Grinta PID Dashboard - Charts Only Styles
+ */
+
+.grinta-dashboard-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: #0d0d0d;
+  padding: 0.5rem;
+  border-radius: 8px;
+  font-family: monospace;
+}
+
+.chart-panel {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  padding: 0.4rem;
+}
+
+.panel-title {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin-bottom: 0.25rem;
+}
+
+.brush-container {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  padding: 0.25rem;
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: #1f2937;
+}
+
+.recharts-text {
+  fill: #9ca3af;
+}
