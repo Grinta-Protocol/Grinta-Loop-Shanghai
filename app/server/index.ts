@@ -237,39 +237,58 @@ async function readState() {
 
 const SYSTEM_PROMPT = `You are the Grinta PID Agent — an AI governor for a CDP stablecoin protocol.
 
-Your role: monitor BTC collateral price AND the GRIT stablecoin peg, then adjust PID controller gains (KP, KI) to maintain the peg during market crashes.
+Your role: monitor BTC collateral price AND the GRIT stablecoin peg, then adjust PID controller gains (KP, KI) to maintain the peg during market crashes AND pumps.
 
 ## How the system works
 - GRIT is a stablecoin backed by BTC (WBTC) collateral.
-- When BTC crashes, GRIT tends to depeg. The PID controller computes a redemption rate to correct it.
-- **KP** (proportional gain): Controls immediate response. Higher KP = stronger correction.
-- **KI** (integral gain): Controls accumulated error. Higher KI = faster convergence but risk of oscillation.
-- Gains are small on purpose (HAI-style): the proportional term is RAY-scaled internally, so Kp ~ 1e-6 already gives ~30% annualized rate for 1% deviation.
+- When BTC crashes, GRIT tends to depeg DOWN. When BTC pumps, GRIT tends to depeg UP. The PID controller computes a redemption rate to correct either direction.
+- **KP** (proportional gain): Controls immediate response to current deviation.
+- **KI** (integral gain): Controls accumulated error. Conservative — overshooting causes oscillation.
+- Gains are tiny on purpose (HAI-style): internal RAY scaling means KP ~ 1e-6 already gives ~30% annualized rate for 1% deviation. DOUBLING KP doubles the rate — do NOT treat gains like linear knobs.
 
-## Your bounds (enforced on-chain by ParameterGuard, demo policy)
-- KP range: [1e-7, 1e-5] WAD (about 0.0000001 to 0.00001)
+## Your bounds (enforced on-chain by ParameterGuard — demo policy)
+- KP range: [1e-7, 1e-5] WAD
 - KI range: [1e-13, 1e-10] WAD
-- Max KP change per update: 5e-6 WAD
-- Max KI change per update: 5e-11 WAD
-- Normal cooldown: 5 seconds
-- Emergency cooldown: 3 seconds
+- Max KP delta per update: 5e-7 WAD (tight — caps one-step jumps to ~±50% of baseline)
+- Max KI delta per update: 5e-12 WAD
+- Normal cooldown: 5s. Emergency cooldown: 3s.
 
-## Decision framework (simple)
-- BTC PUMPING → DECREASE KP and KI (propose values LOWER than current)
-- BTC CRASHING → INCREASE KP and KI (propose values HIGHER than current)
-- BTC STABLE and deviation small → HOLD
+## Decision framework — SYMMETRIC, scaled by severity
+BTC direction and peg deviation are SEPARATE signals. The MAGNITUDE of your adjustment scales with severity; the SIGN follows the move.
 
-Always propose changes relative to the CURRENT values shown in the user prompt — never jump to hardcoded numbers.
-Keep each change within the per-update cap so ParameterGuard accepts the tx.
+Tier 1 — HOLD:
+- |BTC change| < 3% AND |peg deviation| < 1%
+
+Tier 2 — PROACTIVE (small move, peg still OK):
+- 3% ≤ |BTC change| < 5% → adjust KP by ±10-20% of CURRENT KP
+- Example: current KP 1e-6, BTC −4% → new KP ~1.2e-6 (NOT 2e-6)
+- KI: move by ≤20% of current, or leave unchanged
+
+Tier 3 — ACTIVE (medium move OR peg slipping):
+- 5% ≤ |BTC change| < 10%, OR 1% ≤ |deviation| < 3% → adjust KP by ±30-50%
+- Example: current KP 1e-6, BTC −7% → new KP ~1.4e-6
+
+Tier 4 — EMERGENCY (severe crash/pump OR serious depeg):
+- |BTC change| ≥ 10% OR |deviation| ≥ 3% → "adjust_emergency", bigger step
+- Example: current KP 1.4e-6, BTC −15% → emergency KP up to ~1.9e-6 (still delta-capped at 5e-7 per call)
+
+Rules:
+- BTC DROPPING ⇒ INCREASE KP magnitude. BTC PUMPING ⇒ DECREASE KP magnitude. Behavior is SYMMETRIC for crashes and pumps.
+- **NEGATIVE DEVIATION means GRIT is ABOVE peg and the rate is already pushing DOWN** — if KP is already elevated (> 1.5e-6) when deviation is negative, the system is OVER-CORRECTING. REDUCE KP regardless of BTC direction. This rule OVERRIDES the BTC-based tier.
+- **NEVER call the CURRENT value "at max"**. The user prompt shows explicit headroom (how much you can raise/lower). Read those fields — if headroom-up > 0, you are NOT at max.
+- ALWAYS propose values relative to the CURRENT KP/KI shown in the user prompt. Do NOT jump to round hardcoded values.
+- Keep |new − current| ≤ 5e-7 for KP and ≤ 5e-12 for KI, or the guard rejects the tx.
+- KI changes are especially conservative — the integrator accumulates, overshoot causes oscillation.
+- During RECOVERY (BTC stabilizing, deviation shrinking) step KP back DOWN toward the 1e-6 baseline.
 
 ## Response format
 Respond ONLY with valid JSON.
-Values for new_kp and new_ki are human-readable floats in scientific notation (e.g. 2e-6, 5e-12).
+Values for new_kp and new_ki are human-readable floats in scientific notation (e.g. 1.2e-6, 1.3e-12).
 
-Example HOLD: {"action":"hold","reasoning":"BTC stable, peg within tolerance."}
-Example INCREASE (crashing): {"action":"adjust","new_kp":2e-6,"new_ki":2e-12,"reasoning":"BTC dropping, increasing gains."}
-Example DECREASE (pumping): {"action":"adjust","new_kp":5e-7,"new_ki":5e-13,"reasoning":"BTC pumping, decreasing gains."}
-Example EMERGENCY: use "adjust_emergency" when the move must exceed the normal step cap.`;
+Example HOLD: {"action":"hold","reasoning":"BTC −1.8%, deviation 0.04% — within tolerance."}
+Example PROACTIVE drop (KP 1e-6 → 1.2e-6): {"action":"adjust","new_kp":1.2e-6,"new_ki":1.1e-12,"reasoning":"BTC −4%, pre-positioning KP +20% before depeg materializes."}
+Example PROACTIVE pump (KP 1.5e-6 → 1.2e-6): {"action":"adjust","new_kp":1.2e-6,"new_ki":1e-12,"reasoning":"BTC +4%, reducing KP −20% to avoid over-correction on upside."}
+Example EMERGENCY (KP 1.4e-6 → 1.9e-6): {"action":"adjust_emergency","new_kp":1.9e-6,"new_ki":1.5e-12,"reasoning":"BTC −12%, emergency step toward aggressive range."}`;
 
 // ---- LLM Wrapper with Rate Limiting & Retry ----
 
@@ -370,23 +389,42 @@ async function runAgentCycle() {
   log("Asking LLM for decision...");
 
   const btcDirection = state.btcDropPct > 0 ? 'DROPPING' : state.btcDropPct < -1 ? 'PUMPING' : 'STABLE';
+
+  // Compute explicit headroom so the LLM cannot hallucinate "at max" when the
+  // current value sits mid-range. Ceiling / floor are the policy bounds.
+  const KP_CEIL = 1e-5, KP_FLOOR = 1e-7;
+  const KI_CEIL = 1e-10, KI_FLOOR = 1e-13;
+  const kpHeadroomUp = Math.max(0, KP_CEIL - state.kp);
+  const kpHeadroomDown = Math.max(0, state.kp - KP_FLOOR);
+  const kiHeadroomUp = Math.max(0, KI_CEIL - state.ki);
+  const kiHeadroomDown = Math.max(0, state.ki - KI_FLOOR);
+
+  // Over-correction signal: negative deviation means GRIT is trading ABOVE
+  // redemption, so the rate is already pushing it back down. If gains are
+  // elevated and deviation is negative, the system is overshooting.
+  const overCorrecting = state.deviationPct < 0 && state.kp > 1.5e-6;
+
   const userPrompt = `## Current Protocol State
 - BTC Price (on-chain oracle): $${state.collateralPrice.toFixed(2)}
 - BTC Change from $60k baseline: ${state.btcDropPct > 0 ? 'DOWN' : 'UP'} ${Math.abs(state.btcDropPct).toFixed(2)}%
 - BTC Direction: **${btcDirection}**
 - GRIT Market Price: $${state.marketPrice.toFixed(6)}
 - GRIT Redemption Price (target): $${state.redemptionPrice.toFixed(6)}
-- Peg Deviation: ${state.deviationPct}%
+- Peg Deviation: ${state.deviationPct}% ${state.deviationPct < 0 ? '(GRIT ABOVE peg — rate pushing DOWN — system may be OVER-CORRECTING)' : state.deviationPct > 0 ? '(GRIT BELOW peg — rate pushing UP)' : '(on peg)'}
 - Current KP: ${state.kp.toExponential(3)} WAD
 - Current KI: ${state.ki.toExponential(3)} WAD
+- KP headroom: can raise by up to ${kpHeadroomUp.toExponential(2)}, can lower by up to ${kpHeadroomDown.toExponential(2)} (ceiling 1e-5, floor 1e-7)
+- KI headroom: can raise by up to ${kiHeadroomUp.toExponential(2)}, can lower by up to ${kiHeadroomDown.toExponential(2)} (ceiling 1e-10, floor 1e-13)
 - Last Proportional Term: ${state.lastProportional.toExponential(3)}
-
-## DECISION RULE (simple):
-- PUMPING → new_kp < current_kp AND new_ki < current_ki
-- DROPPING → new_kp > current_kp AND new_ki > current_ki
-- STABLE with small deviation → hold
-
-Propose values RELATIVE to current (current ± small step). Respect the per-update cap.
+${overCorrecting ? '\n## ALERT: OVER-CORRECTION DETECTED\nDeviation is NEGATIVE and KP is elevated. Rate is over-pushing GRIT DOWN. YOU MUST REDUCE KP (and KI if also elevated), regardless of BTC direction. Pull gains back toward baseline 1e-6 / 1e-12.\n' : ''}
+## DECISION RULE
+- If deviation is NEGATIVE (GRIT above peg) AND current KP > 1.5e-6 → REDUCE KP. This overrides BTC direction. The rate is already over-correcting.
+- Otherwise apply the tiered framework from the system prompt:
+  - DROPPING (BTC going down) AND peg slipping DOWN → raise KP magnitude
+  - PUMPING (BTC going up) → lower KP magnitude
+  - STABLE and deviation small → hold
+- NEVER propose a value at the absolute ceiling / floor unless you ARE already one delta step away. Consult KP/KI headroom above — they show how much room is left in each direction.
+- Propose values RELATIVE to current (current ± small step) and within the per-update cap (5e-7 for KP, 5e-12 for KI).
 
 What is your decision? (Respond ONLY with valid JSON)`;
 
