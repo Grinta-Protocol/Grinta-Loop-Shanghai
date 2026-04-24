@@ -297,6 +297,21 @@ pub mod ParameterGuard {
         });
     }
 
+    /// Redirect the Guard's PID reference to a new PIDController contract.
+    ///
+    /// Why: when we redeploy the PIDController (e.g. V11 RAY migration), the
+    /// Guard must be repointed to the new address so its proxy_* admin calls
+    /// and propose_parameters route to the correct contract. Without this
+    /// setter the Guard would be stuck pointing at the old (corrupt) PID and
+    /// we'd have to redeploy the Guard itself — losing the update_count,
+    /// stopped flag, and any accumulated state. Admin-only.
+    #[external(v0)]
+    fn set_pid_controller(ref self: ContractState, controller: ContractAddress) {
+        self._assert_admin();
+        assert(!controller.is_zero(), 'GUARD: pid is zero');
+        self.pid_controller.write(controller);
+    }
+
     #[external(v0)]
     fn set_policy(ref self: ContractState, policy: AgentPolicy) {
         self._assert_admin();

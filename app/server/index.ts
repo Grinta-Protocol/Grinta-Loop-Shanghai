@@ -21,7 +21,7 @@ const RAY = 10n ** 27n;
 const STARK_PRIME = 2n ** 251n + 17n * 2n ** 192n + 1n;
 
 const CFG = {
-  RPC_URL: process.env.STARKNET_RPC_URL || "https://starknet-sepolia.public.blastapi.io",
+  RPC_URL: process.env.STARKNET_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/w0WsoxSXn4Xq8DEGYETDW",
   DEPLOYER_ADDRESS: req("DEPLOYER_ADDRESS"),
   DEPLOYER_PRIVATE_KEY: req("DEPLOYER_PRIVATE_KEY"),
   AGENT_ADDRESS: req("AGENT_ADDRESS"),
@@ -171,14 +171,15 @@ Your role: monitor BTC collateral price AND the GRIT stablecoin peg, then adjust
 - When BTC crashes, GRIT tends to depeg. The PID controller computes a redemption rate to correct it.
 - **KP** (proportional gain): Controls immediate response. Higher KP = stronger correction.
 - **KI** (integral gain): Controls accumulated error. Higher KI = faster convergence but risk of oscillation.
+- Gains are small on purpose (HAI-style): the proportional term is RAY-scaled internally, so Kp ~ 1e-6 already gives ~30% annualized rate for 1% deviation.
 
-## Your bounds (enforced on-chain by ParameterGuard)
-- KP range: [0.1, 10.0] WAD
-- KI range: [0.0, 0.1] WAD
-- Max KP change per update: 1.0 WAD
-- Max KI change per update: 0.1 WAD
-- Normal cooldown: 30 seconds
-- Emergency cooldown: 10 seconds
+## Your bounds (enforced on-chain by ParameterGuard, demo policy)
+- KP range: [1e-7, 1e-5] WAD (about 0.0000001 to 0.00001)
+- KI range: [1e-13, 1e-10] WAD
+- Max KP change per update: 5e-6 WAD
+- Max KI change per update: 5e-11 WAD
+- Normal cooldown: 5 seconds
+- Emergency cooldown: 3 seconds
 
 ## Decision framework (simple)
 - BTC PUMPING → DECREASE KP and KI (propose values LOWER than current)
@@ -190,11 +191,11 @@ Keep each change within the per-update cap so ParameterGuard accepts the tx.
 
 ## Response format
 Respond ONLY with valid JSON.
-Values for new_kp and new_ki are human-readable floats (e.g. 2.5, 0.003).
+Values for new_kp and new_ki are human-readable floats in scientific notation (e.g. 2e-6, 5e-12).
 
 Example HOLD: {"action":"hold","reasoning":"BTC stable, peg within tolerance."}
-Example INCREASE (crashing): {"action":"adjust","new_kp":<current_kp + step>,"new_ki":<current_ki + step>,"reasoning":"BTC dropping, increasing gains."}
-Example DECREASE (pumping): {"action":"adjust","new_kp":<current_kp - step>,"new_ki":<current_ki - step>,"reasoning":"BTC pumping, decreasing gains."}
+Example INCREASE (crashing): {"action":"adjust","new_kp":2e-6,"new_ki":2e-12,"reasoning":"BTC dropping, increasing gains."}
+Example DECREASE (pumping): {"action":"adjust","new_kp":5e-7,"new_ki":5e-13,"reasoning":"BTC pumping, decreasing gains."}
 Example EMERGENCY: use "adjust_emergency" when the move must exceed the normal step cap.`;
 
 async function runAgentCycle() {
@@ -205,7 +206,7 @@ async function runAgentCycle() {
   log("State read complete", {
     btc: `$${state.collateralPrice.toFixed(0)}`,
     grit: `$${state.marketPrice.toFixed(4)}`,
-    kp: state.kp.toFixed(3),
+    kp: state.kp.toExponential(2),
     deviation: `${state.deviationPct}%`,
   });
 
@@ -219,9 +220,9 @@ async function runAgentCycle() {
 - GRIT Market Price: $${state.marketPrice.toFixed(6)}
 - GRIT Redemption Price (target): $${state.redemptionPrice.toFixed(6)}
 - Peg Deviation: ${state.deviationPct}%
-- Current KP: ${state.kp.toFixed(6)} WAD
-- Current KI: ${state.ki.toFixed(6)} WAD
-- Last Proportional Term: ${state.lastProportional.toFixed(6)}
+- Current KP: ${state.kp.toExponential(3)} WAD
+- Current KI: ${state.ki.toExponential(3)} WAD
+- Last Proportional Term: ${state.lastProportional.toExponential(3)}
 
 ## DECISION RULE (simple):
 - PUMPING → new_kp < current_kp AND new_ki < current_ki
@@ -255,8 +256,8 @@ What is your decision? (Respond ONLY with valid JSON)`;
 
   if (decision.action === "hold") return decision;
 
-  const newKp = BigInt(Math.round((decision.new_kp ?? 2.0) * 1e18));
-  const newKi = BigInt(Math.round((decision.new_ki ?? 0.002) * 1e18));
+  const newKp = BigInt(Math.round((decision.new_kp ?? 1e-6) * 1e18));
+  const newKi = BigInt(Math.round((decision.new_ki ?? 1e-12) * 1e18));
   const isEmergency = decision.action === "adjust_emergency";
 
   log(`Proposing KP=${decision.new_kp}, KI=${decision.new_ki}, emergency=${isEmergency}`);

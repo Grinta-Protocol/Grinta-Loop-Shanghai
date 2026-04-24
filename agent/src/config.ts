@@ -18,8 +18,8 @@ function requireEnv(key: string): string {
 }
 
 export const CONFIG = {
-  // Starknet RPC (prefer Alchemy/Infura over public node to avoid rate limits)
-  RPC_URL: process.env.STARKNET_RPC_URL || "https://starknet-sepolia.public.blastapi.io",
+  // Starknet RPC (Alchemy Sepolia v0_10)
+  RPC_URL: process.env.STARKNET_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/w0WsoxSXn4Xq8DEGYETDW",
 
   // Starknet — agent wallet
   AGENT_PRIVATE_KEY: requireEnv("AGENT_PRIVATE_KEY"),

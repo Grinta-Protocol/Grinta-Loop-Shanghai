@@ -67,8 +67,12 @@ fn test_compute_rate_below_peg() {
     cheat_caller_address(pid_addr, admin(), CheatSpan::TargetCalls(1));
     let rate = pid.compute_rate(market_price, redemption_price);
 
-    // Market below peg → positive deviation → rate > RAY (price needs to decrease to attract buys)
+    // Market below peg → positive deviation → rate > RAY.
+    // Magnitude check: with Kp=1e-6 WAD and P≈10% RAY, expect rate delta
+    // swmul(1e12, 1e26)/1e18 = 1e20 RAY/sec minimum. Use 1e19 as lower bound
+    // to allow for riemann averaging and bound clipping.
     assert(rate > RAY, 'rate should be > RAY below peg');
+    assert(rate - RAY >= 10_000_000_000_000_000_000, 'rate delta too weak');
 }
 
 // ============================================================================
@@ -86,8 +90,10 @@ fn test_compute_rate_above_peg() {
     cheat_caller_address(pid_addr, admin(), CheatSpan::TargetCalls(1));
     let rate = pid.compute_rate(market_price, redemption_price);
 
-    // Market above peg → negative deviation → rate < RAY
+    // Market above peg → negative deviation → rate < RAY. Magnitude: same
+    // 1e19 RAY/sec lower bound on |delta| as the below-peg test.
     assert(rate < RAY, 'rate should be < RAY above peg');
+    assert(RAY - rate >= 10_000_000_000_000_000_000, 'rate delta too weak');
 }
 
 // ============================================================================

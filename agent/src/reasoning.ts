@@ -40,20 +40,22 @@ Your role: monitor BTC collateral price AND the GRIT stablecoin peg, then adjust
 The BTC price is a LEADING indicator. The peg deviation is a LAGGING indicator.
 You should react to BTC drops BEFORE the depeg fully materializes.
 
-## Your bounds (enforced on-chain by ParameterGuard)
-- KP range: [1.4, 2.6] WAD (1 WAD = 1e18)
-- KI range: [0.001, 0.01] WAD
-- Max KP change per update: 0.5 WAD
-- Max KI change per update: 0.005 WAD
-- Normal cooldown: 300 seconds between updates
-- Emergency cooldown: 60 seconds (when you declare emergency)
-- Budget: 20 total updates
+## Your bounds (enforced on-chain by ParameterGuard — V11 demo policy)
+- KP range: [1e-7, 1e-5] WAD (about 0.0000001 to 0.00001)
+- KI range: [1e-13, 1e-10] WAD
+- Max KP change per update: 5e-6 WAD
+- Max KI change per update: 5e-11 WAD
+- Normal cooldown: 5 seconds between updates
+- Emergency cooldown: 3 seconds (when you declare emergency)
+- Budget: 1000 total updates
+
+KP is intentionally small — the proportional term is RAY-scaled internally (HAI-style), so KP ~1e-6 already produces ~30% annualized rate for 1% deviation.
 
 ## Decision framework
 1. **BTC stable, peg stable (BTC drop < 3%, deviation < 1%)**: HOLD — no action needed.
 2. **BTC dropping (3-10%), peg still OK**: ADJUST — proactively increase KP to prepare for incoming depeg. This is the PREVENTIVE action.
 3. **BTC crashing (>10%) OR peg deviation >= 5%**: ADJUST_EMERGENCY — aggressively boost KP toward upper bound. Declare emergency for shorter cooldown.
-4. **Recovery phase (BTC stabilizing, deviation decreasing)**: ADJUST — start reducing KP back toward baseline (2.0 WAD).
+4. **Recovery phase (BTC stabilizing, deviation decreasing)**: ADJUST — start reducing KP back toward baseline (~1e-6 WAD).
 5. KI adjustments should be conservative — small increases during sustained deviations, never aggressive.
 
 ## Rules
@@ -65,32 +67,25 @@ You should react to BTC drops BEFORE the depeg fully materializes.
 ## Response format — CRITICAL
 Respond ONLY with valid JSON. No markdown, no explanation outside the JSON.
 
-Values for new_kp and new_ki MUST be RAW INTEGER STRINGS — the on-chain representation.
-Multiply your human value by 1e18 (1000000000000000000).
+Values for new_kp and new_ki MUST be human-readable FLOATS in scientific notation (e.g. 1.5e-6, 3e-12).
+Do NOT multiply by 1e18 — the server converts for you.
 
-Conversion table:
-  KP 1.4 = 1400000000000000000
-  KP 1.8 = 1800000000000000000
-  KP 2.0 = 2000000000000000000
-  KP 2.3 = 2300000000000000000
-  KP 2.5 = 2500000000000000000
-  KP 2.6 = 2600000000000000000
-  KI 0.001 = 1000000000000000
-  KI 0.002 = 2000000000000000
-  KI 0.005 = 5000000000000000
-  KI 0.01  = 10000000000000000
-
-WRONG: "new_kp": 2.5
-CORRECT: "new_kp": 2500000000000000000
+Typical values:
+  KP baseline:   1e-6
+  KP aggressive: 5e-6  (upper end)
+  KP minimum:    1e-7  (lower end)
+  KI baseline:   1e-12
+  KI aggressive: 5e-11 (upper end)
+  KI minimum:    1e-13 (lower end)
 
 Example HOLD response:
 {"action":"hold","is_emergency":false,"reasoning":"BTC stable at $59.8k, deviation 0.03% — no action needed."}
 
 Example ADJUST response:
-{"action":"adjust","new_kp":2300000000000000000,"new_ki":2000000000000000,"is_emergency":false,"reasoning":"BTC down 5%, pre-positioning KP from 2.0 to 2.3 before depeg materializes."}
+{"action":"adjust","new_kp":3e-6,"new_ki":2e-12,"is_emergency":false,"reasoning":"BTC down 5%, pre-positioning KP from 1e-6 to 3e-6 before depeg materializes."}
 
 Example EMERGENCY response:
-{"action":"adjust_emergency","new_kp":2500000000000000000,"new_ki":3000000000000000,"is_emergency":true,"reasoning":"BTC crashed 15%, off-chain shows further decline. Boosting KP to 2.5 with emergency cooldown."}`;
+{"action":"adjust_emergency","new_kp":5e-6,"new_ki":3e-11,"is_emergency":true,"reasoning":"BTC crashed 15%, off-chain shows further decline. Boosting KP to 5e-6 with emergency cooldown."}`;
 
 // ---- Reasoning Engine ----
 
@@ -147,11 +142,11 @@ export class ReasoningEngine {
 - **GRIT Market Price**: $${state.marketPriceUsd.toFixed(6)}
 - **GRIT Redemption Price (target)**: $${state.redemptionPriceUsd.toFixed(6)}
 - **Peg Deviation**: ${state.deviationPct.toFixed(4)}%
-- **Current KP**: ${kpHuman.toFixed(6)} WAD (raw: ${state.kp})
-- **Current KI**: ${kiHuman.toFixed(6)} WAD (raw: ${state.ki})
-- **Last Proportional Term**: ${proportionalHuman.toFixed(6)}
-- **Last Integral Term**: ${integralHuman.toFixed(6)}
-- **Guard Update Count**: ${state.guardUpdateCount} / 20
+- **Current KP**: ${kpHuman.toExponential(3)} WAD (raw: ${state.kp})
+- **Current KI**: ${kiHuman.toExponential(3)} WAD (raw: ${state.ki})
+- **Last Proportional Term**: ${proportionalHuman.toExponential(3)}
+- **Last Integral Term**: ${integralHuman.toExponential(3)}
+- **Guard Update Count**: ${state.guardUpdateCount} / 1000
 - **Guard Stopped**: ${state.guardStopped}
 
 What is your decision?`;
@@ -194,16 +189,19 @@ What is your decision?`;
   }
 
   /**
-   * If the LLM returns a float (e.g. 2.5) instead of a WAD integer,
-   * detect it and multiply by 1e18. Otherwise parse as BigInt directly.
+   * V11: LLM is instructed to return human-readable floats (e.g. 1e-6 for KP).
+   * Multiply by 1e18 to get WAD integer. If the value is already huge (legacy
+   * raw WAD), pass through.
+   *
+   * Heuristic change vs V10: V11 floats are tiny (1e-13..1e-5), so "< 1e15"
+   * no longer separates floats from raw WAD. Use "< 1" instead — floats are
+   * always sub-unit, raw WAD integers are always >= 1e11 (min KP=1e-7 WAD).
    */
   private parseWadValue(val: unknown): bigint {
     const num = Number(val);
-    // If the value is small enough to be a human-readable float (< 1e15),
-    // treat it as a float and convert to WAD. Otherwise it's already WAD.
-    if (num < 1e15 && num > 0) {
-      const cents = Math.round(num * 1e18);
-      return BigInt(cents);
+    if (num <= 0) return 0n;
+    if (num < 1) {
+      return BigInt(Math.round(num * 1e18));
     }
     return BigInt(String(val));
   }

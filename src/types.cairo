@@ -139,8 +139,8 @@ pub struct Health {
 #[derive(Copy, Drop, Serde, starknet::Store)]
 pub struct DeviationObservation {
     pub timestamp: u64,
-    pub proportional: i128,   // Current proportional term (WAD-scaled)
-    pub integral: i128,       // Accumulated integral term (WAD-scaled)
+    pub proportional: i128,   // Current proportional term (RAY-scaled, matches HAI)
+    pub integral: i128,       // Accumulated integral term (RAY * seconds)
 }
 
 /// PID controller parameters

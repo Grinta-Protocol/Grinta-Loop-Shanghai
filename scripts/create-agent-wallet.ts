@@ -28,7 +28,7 @@ const OZ_ACCOUNT_CLASS_HASH =
 
 const RPC_URL =
   process.env.STARKNET_RPC_URL ||
-  "https://starknet-sepolia.public.blastapi.io";
+  "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/w0WsoxSXn4Xq8DEGYETDW";
 
 async function generate() {
   // 1. Random private key

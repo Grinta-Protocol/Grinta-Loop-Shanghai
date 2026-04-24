@@ -6,6 +6,14 @@ import './Governance.css'
 const API = import.meta.env.VITE_API_URL || '/api'
 const VOYAGER_BASE = 'https://sepolia.voyager.online/tx/'
 
+// Format PID gains: HAI-style scientific notation for small values, fixed otherwise.
+// Kp=1e-6 → "1.00e-6", Ki=1e-12 → "1.00e-12", Kp=2.3 → "2.300"
+function formatGain(n, fractionDigits = 3) {
+  if (n == null || !Number.isFinite(n)) return '—'
+  if (n === 0) return '0'
+  return Math.abs(n) < 0.01 ? n.toExponential(2) : n.toFixed(fractionDigits)
+}
+
 /* ── Metric Card ── */
 function MetricCard({ label, sublabel, value, tone, icon, trend }) {
   const [pulse, setPulse] = useState(false)
@@ -159,8 +167,8 @@ export default function Governance() {
         setHistory((prev) => [...prev, {
           time: new Date().toLocaleTimeString(),
           action: `Governor: ${d.action}`,
-          kpChange: `${state?.kp?.toFixed(2) ?? '?'} → ${d.new_kp}`,
-          ki: `${d.new_ki ?? state?.ki?.toFixed(4) ?? '?'}`,
+          kpChange: `${formatGain(state?.kp, 2)} → ${formatGain(d.new_kp, 2)}`,
+          ki: `${formatGain(d.new_ki ?? state?.ki, 4)}`,
           txHash: d.txHash || '—',
         }])
       }
@@ -283,12 +291,12 @@ export default function Governance() {
             />
             <MetricCard
               label="KP" sublabel="Proportional"
-              value={state ? state.kp.toFixed(3) : '—'}
+              value={state ? formatGain(state.kp, 3) : '—'}
               icon="⚙"
             />
             <MetricCard
               label="KI" sublabel="Integral"
-              value={state ? state.ki.toFixed(6) : '—'}
+              value={state ? formatGain(state.ki, 6) : '—'}
               icon="∑"
             />
             <MetricCard
@@ -403,8 +411,8 @@ export default function Governance() {
               <p className="agent-quote">"{decision.reasoning}"</p>
               {decision.new_kp != null && (
                 <p className="decision-params mono">
-                  KP: {state?.kp?.toFixed(3)} → {decision.new_kp} &nbsp;|&nbsp;
-                  KI: {state?.ki?.toFixed(6)} → {decision.new_ki}
+                  KP: {formatGain(state?.kp, 3)} → {formatGain(decision.new_kp, 3)} &nbsp;|&nbsp;
+                  KI: {formatGain(state?.ki, 6)} → {formatGain(decision.new_ki, 6)}
                 </p>
               )}
             </div>

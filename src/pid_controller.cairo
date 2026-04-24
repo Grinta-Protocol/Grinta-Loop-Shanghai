@@ -8,7 +8,7 @@ pub mod PIDController {
     use grinta::types::{
         WAD, RAY, RAY_i128,
         DeviationObservation, PIDControllerParams, ControllerGains,
-        wmul, rpow, abs_i128, swmul, srmul, riemann_sum,
+        rpow, abs_i128, swmul, srmul, riemann_sum,
     };
 
     // Maximum positive rate: type(i128).max equivalent
@@ -105,34 +105,28 @@ pub mod PIDController {
         }
 
         /// Proportional term = (redemptionPrice - scaledMarketPrice) / redemptionPrice
-        /// Result is WAD-scaled (18 decimals)
+        /// Result is RAY-scaled (27 decimals) — matches HAI's rdiv semantics.
         fn _get_proportional_term(
             self: @ContractState, market_price: u256, redemption_price: u256,
         ) -> i128 {
             // Market price is WAD (18 dec), redemption price is RAY (27 dec)
-            // Scale market price to RAY
             let scaled_market: u256 = market_price * 1_000_000_000; // WAD -> RAY
 
-            // Compute deviation: (redemptionPrice - scaledMarket) / redemptionPrice
-            // Result in WAD precision
             if scaled_market <= redemption_price {
-                // Positive deviation (market below target)
                 let diff: u256 = redemption_price - scaled_market;
-                // diff * WAD / redemption_price → WAD-scaled ratio
-                let ratio: u256 = (diff * WAD) / redemption_price;
+                let ratio: u256 = (diff * RAY) / redemption_price;
                 let result: u128 = ratio.try_into().unwrap();
                 result.try_into().unwrap()
             } else {
-                // Negative deviation (market above target)
                 let diff: u256 = scaled_market - redemption_price;
-                let ratio: u256 = (diff * WAD) / redemption_price;
+                let ratio: u256 = (diff * RAY) / redemption_price;
                 let result: u128 = ratio.try_into().unwrap();
                 let result_i: i128 = result.try_into().unwrap();
                 -result_i
             }
         }
 
-        /// Check if |piOutput| breaks the noise barrier
+        /// Check if |piOutput| breaks the noise barrier — all RAY-scale.
         fn _breaks_noise_barrier(
             self: @ContractState, pi_sum: u256, redemption_price: u256,
         ) -> bool {
@@ -141,14 +135,11 @@ pub mod PIDController {
             }
             let noise = self.noise_barrier.read();
             let delta_noise: u256 = 2 * WAD - noise;
-            // pi_sum >= redemptionPrice * deltaNoise / WAD - redemptionPrice
-            // In WAD: piSum >= wmul(redemptionPrice_in_wad, deltaNoise) - redemptionPrice_in_wad
-            let r_price_wad = redemption_price / 1_000_000_000; // RAY -> WAD
-            let threshold = wmul(r_price_wad, delta_noise);
-            if threshold <= r_price_wad {
-                return true; // prevent underflow
+            let threshold: u256 = redemption_price * delta_noise / WAD;
+            if threshold <= redemption_price {
+                return true; // noise_barrier >= WAD disables the filter
             }
-            pi_sum >= threshold - r_price_wad
+            pi_sum >= threshold - redemption_price
         }
 
         /// Gain adjusted PI output: Kp * P + Ki * I
@@ -390,5 +381,30 @@ pub mod PIDController {
     fn transfer_admin(ref self: ContractState, new_admin: ContractAddress) {
         self._assert_admin();
         self.admin.write(new_admin);
+    }
+
+    /// Admin emergency: zero the accumulated deviation state (timestamp, P, I).
+    ///
+    /// Why this exists:
+    ///   1. Integrator windup recovery — after a long peg excursion the integral
+    ///      can carry state that dominates future compute_rate calls. With a
+    ///      30-day half-life leak, natural dissipation is too slow when you need
+    ///      a clean slate (e.g. post-incident, or handing off from demo to prod).
+    ///   2. Demo → prod transitions — demo sessions run with short cooldowns
+    ///      (5s) and can accumulate integral quickly; resetting before switching
+    ///      to prod params avoids carrying demo artifacts into live operation.
+    ///   3. Redemption-price re-pegging — after SAFEEngine.reset_redemption_price
+    ///      the previously-accumulated P·dt history no longer corresponds to the
+    ///      new peg baseline; zeroing prevents phantom corrections.
+    ///
+    /// Does NOT touch gains (kp, ki) or params (bounds, leak, noise_barrier) —
+    /// use set_kp / set_ki / set_noise_barrier / set_per_second_cumulative_leak
+    /// for those. Admin-only.
+    #[external(v0)]
+    fn reset_deviation(ref self: ContractState) {
+        self._assert_admin();
+        self.deviation_timestamp.write(0);
+        self.deviation_proportional.write(0);
+        self.deviation_integral.write(0);
     }
 }

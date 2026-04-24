@@ -31,14 +31,17 @@ pub const WBTC_DECIMALS: u8 = 8;
 // 1 WBTC in asset units (8 decimals)
 pub const ONE_WBTC: u256 = 100_000_000; // 1e8
 
-// PID Controller defaults
-pub const KP: i128 = 1_000_000_000_000_000_000; // 1.0 WAD
-pub const KI: i128 = 500_000_000_000_000_000; // 0.5 WAD
+// PID Controller defaults — RAY-scale proportional (V11 migration).
+// Kp/Ki now combine with RAY-scale P via swmul(Kp_WAD, P_RAY) → RAY output.
+// With Kp = 1e-6 WAD (1e12 raw), a 1% deviation (P = 1e25 RAY) produces
+// rate delta = 1e12 × 1e25 / 1e18 = 1e19 RAY/sec (~27% annualized).
+pub const KP: i128 = 1_000_000_000_000; // 1e-6 WAD (demo visibility)
+pub const KI: i128 = 1_000_000; // 1e-12 WAD
 pub const NOISE_BARRIER: u256 = 950_000_000_000_000_000; // 0.95 WAD (5% threshold)
 pub const INTEGRAL_PERIOD_SIZE: u64 = 3600; // 1 hour
 pub const FEEDBACK_UPPER_BOUND: u256 = 1_000_000_000_000_000_000_000_000_000; // 1e27 (RAY)
 pub const FEEDBACK_LOWER_BOUND: i128 = -999_999_999_999_999_999_999_999_999; // -(RAY-1)
-pub const PER_SECOND_LEAK: u256 = 999_999_711_200_000_000_000_000_000; // ~0.999999711 RAY
+pub const PER_SECOND_LEAK: u256 = 999_999_732_582_142_021_614_955_959; // ~30-day half-life RAY
 
 // ============================================================================
 // Test addresses
