@@ -2,10 +2,11 @@ import express from "express";
 import cors from "cors";
 import { Account, RpcProvider, CallData, cairo, type Call } from "starknet";
 import OpenAI from "openai";
+import lighthouse from "@lighthouse-web3/sdk";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
@@ -39,12 +40,84 @@ const CFG = {
   EKUBO_ROUTER: req("EKUBO_ROUTER_ADDRESS"),
   POOL_FEE: process.env.POOL_FEE || "0",
   POOL_TICK_SPACING: process.env.POOL_TICK_SPACING || "1000",
+  LIGHTHOUSE_API_KEY: process.env.LIGHTHOUSE_API_KEY || "",
 };
 
 const provider = new RpcProvider({ nodeUrl: CFG.RPC_URL });
 const deployer = new Account({ provider, address: CFG.DEPLOYER_ADDRESS, signer: CFG.DEPLOYER_PRIVATE_KEY });
 const agent = new Account({ provider, address: CFG.AGENT_ADDRESS, signer: CFG.AGENT_PRIVATE_KEY });
 const llm = new OpenAI({ apiKey: CFG.LLM_API_KEY, baseURL: CFG.LLM_BASE_URL });
+
+// ---- Lighthouse Filecoin Archive ----
+// Cache for IPNS name (reuse across sessions)
+const IPNS_CACHE_FILE = join(__dirname, "..", "lighthouse-ipns.json");
+
+function getIpnsName(): string | null {
+  try {
+    if (existsSync(IPNS_CACHE_FILE)) {
+      return JSON.parse(readFileSync(IPNS_CACHE_FILE, "utf-8")).ipnsName;
+    }
+  } catch {}
+  return null;
+}
+
+function saveIpnsName(ipnsName: string) {
+  writeFileSync(IPNS_CACHE_FILE, JSON.stringify({ ipnsName, updated: new Date().toISOString() }));
+}
+
+async function archiveToFilecoin(): Promise<{ cid: string; ipns: string; url: string } | null> {
+  if (!CFG.LIGHTHOUSE_API_KEY) {
+    log("LIGHTHOUSE_API_KEY not set — skipping Filecoin archive");
+    return null;
+  }
+
+  try {
+    // Read decisions.jsonl
+    const jsonlPath = join(__dirname, "..", "..", "agent", "decisions.jsonl");
+    if (!existsSync(jsonlPath)) {
+      log("No decisions.jsonl found — skipping archive");
+      return null;
+    }
+
+    const content = readFileSync(jsonlPath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    if (lines.length === 0) {
+      log("No decisions to archive");
+      return null;
+    }
+
+    // Parse to JSON array for cleaner IPFS storage
+    const records = lines.map((line) => JSON.parse(line));
+
+    // Upload to IPFS
+    const blob = new Blob([JSON.stringify(records, null, 2)], { type: "application/json" });
+    const cid = await lighthouse.uploadBuffer(
+      Buffer.from(await blob.arrayBuffer()),
+      CFG.LIGHTHOUSE_API_KEY
+    ) as any;
+    const cidStr = (cid as any).data?. cid || (cid as any).cid || String(cid);
+    log(`Uploaded to IPFS: ${cidStr}`);
+
+    // Get or create IPNS key
+    let ipnsKey = getIpnsName() || "";
+    if (!ipnsKey) {
+      const keyResponse: any = await lighthouse.generateKey(CFG.LIGHTHOUSE_API_KEY);
+      ipnsKey = keyResponse.data.ipnsName;
+      saveIpnsName(ipnsKey);
+      log(`Created new IPNS: ${ipnsKey}`);
+    }
+
+    // Publish record
+    await lighthouse.publishRecord(cidStr, ipnsKey, CFG.LIGHTHOUSE_API_KEY) as any;
+    const ipnsUrl = `https://ipfs.io/ipns/${ipnsKey}`;
+    log(`Archived to Filecoin: ${ipnsUrl}`);
+
+    return { cid: cidStr, ipns: ipnsKey, url: ipnsUrl };
+  } catch (e: any) {
+    log(`Filecoin archive error: ${e.message}`);
+    return null;
+  }
+}
 
 // ---- SSE log broadcast ----
 type SSEClient = { id: number; res: express.Response };
@@ -548,7 +621,7 @@ app.post("/api/swap/trigger", async (_req, res) => {
   }
 });
 
-// Full demo sequence: cheat → agent → swap → read
+// Full demo sequence: cheat → agent → swap → read → archive
 app.post("/api/demo/crash", async (req, res) => {
   try {
     const pct = Number(req.body.percent || 10);
@@ -566,6 +639,12 @@ app.post("/api/demo/crash", async (req, res) => {
     const swapTx = await triggerSwap();
     log("Step 3/3: Rate recalculated");
 
+    // 4. Auto-archive to Filecoin (Lighthouse)
+    const archiveResult = await archiveToFilecoin();
+    if (archiveResult) {
+      log(`Archived: ${archiveResult.url}`);
+    }
+
     const finalState = await readState();
     broadcast("state", finalState);
 
@@ -574,6 +653,7 @@ app.post("/api/demo/crash", async (req, res) => {
       decision,
       swapTx,
       finalState,
+      archive: archiveResult,
     });
   } catch (e: any) {
     log(`DEMO ERROR: ${e.message}`);
