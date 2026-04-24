@@ -765,6 +765,101 @@
   padding: 3rem 0;
 }
 
+/* Welcome Message */
+.welcome-message {
+  padding: 1rem;
+  animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.welcome-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.welcome-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.welcome-flow {
+  background: var(--bg-muted);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.flow-step {
+  font-size: 0.7rem;
+  padding: 0.3rem 0;
+  color: var(--text);
+}
+
+.flow-step strong {
+  color: var(--accent);
+}
+
+.welcome-cta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.welcome-cta strong {
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+/* Decision Waiting */
+.decision-waiting {
+  text-align: center;
+  padding: 1rem;
+  animation: fadeIn 0.5s ease;
+}
+
+.waiting-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.waiting-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.waiting-hint {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Typewriter effect */
+.agent-quote {
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+
+.decision-card .agent-quote {
+  animation: typeIn 0.3s ease;
+}
+
+@keyframes typeIn {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
+
 .log-line {
   display: flex;
   gap: 0.75rem;

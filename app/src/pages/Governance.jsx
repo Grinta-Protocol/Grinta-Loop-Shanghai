@@ -103,6 +103,9 @@ function LogLine({ entry }) {
 
 /* ── Parameter History Row ── */
 function HistoryTable({ rows, archiveUrl }) {
+  // Filter only rows with valid TX hash (proposals that were on-chain)
+  const rowsWithTx = rows.filter((r) => r.txHash && r.txHash !== '—')
+  
   return (
     <section className="section history-section">
       <div className="section-header">
@@ -127,30 +130,32 @@ function HistoryTable({ rows, archiveUrl }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {rowsWithTx.length === 0 ? (
               <tr>
                 <td colSpan={6} className="table-empty">
                   No parameter changes yet — the governor has not spoken.
                 </td>
               </tr>
             ) : (
-              rows.map((r, i) => (
+              rowsWithTx.map((r, i) => (
                 <tr key={i}>
                   <td className="mono">{r.time}</td>
                   <td className="history-action">{r.action}</td>
                   <td className="mono">{r.kpChange}</td>
                   <td className="mono">{r.ki}</td>
                   <td>
-                    <a href={`${VOYAGER_BASE}${r.txHash}`} target="_blank" rel="noopener noreferrer" className="tx-link mono">
-                      {r.txHash?.slice(0, 8)}… ↗
-                    </a>
+                    {r.txHash ? (
+                      <a href={`${VOYAGER_BASE}${r.txHash}`} target="_blank" rel="noopener noreferrer" className="tx-link mono">
+                        {r.txHash.slice(0, 8)}… ↗
+                      </a>
+                    ) : '—'}
                   </td>
                   <td>
-                    {i === rows.length - 1 && archiveUrl ? (
+                    {archiveUrl ? (
                       <a href={archiveUrl} target="_blank" rel="noopener noreferrer" className="tx-link">
                         🔗 ↗
                       </a>
-                    ) : "—"}
+                    ) : '—'}
                   </td>
                 </tr>
               ))
@@ -164,14 +169,38 @@ function HistoryTable({ rows, archiveUrl }) {
 
 /* ── Main ── */
 export default function Governance() {
-const [state, setState] = useState(null)
+  const [state, setState] = useState(null)
   const [logs, setLogs] = useState([])
   const [history, setHistory] = useState([])
   const [archiveUrl, setArchiveUrl] = useState(null)
   const [loading, setLoading] = useState({})
   const [decision, setDecision] = useState(null)
   const [showGraph, setShowGraph] = useState(false) // flip state
+  const [isFirstVisit, setIsFirstVisit] = useState(true) // First visit onboarding
+  const [decisionText, setDecisionText] = useState('')
   const logRef = useRef(null)
+
+  // Typewriter effect for decision
+  useEffect(() => {
+    if (decision?.reasoning) {
+      setDecisionText('')
+      let i = 0
+      const text = decision.reasoning
+      const interval = setInterval(() => {
+        setDecisionText(text.slice(0, i + 1))
+        i++
+        if (i >= text.length) clearInterval(interval)
+      }, 20)
+      return () => clearInterval(interval)
+    }
+  }, [decision?.reasoning])
+
+  // Mark first visit as false after first demo
+  useEffect(() => {
+    if (logs.length > 0 || history.length > 0) {
+      setIsFirstVisit(false)
+    }
+  }, [logs.length, history.length])
 
   const addLog = useCallback((entry) => {
     setLogs((prev) => [...prev.slice(-100), { ...entry, id: `${Date.now()}-${Math.random()}` }])
@@ -410,12 +439,24 @@ const [state, setState] = useState(null)
                   <span className="titlebar-text mono">Agent Reasoning | Live deliberation | On Chain</span>
                 </div>
                 <div className="log-scroll" ref={logRef}>
-                  {logs.length === 0 && (
+                  {isFirstVisit && logs.length === 0 ? (
+                    <div className="welcome-message">
+                      <div className="welcome-title">👋 Welcome to Grinta Governance</div>
+                      <div className="welcome-subtitle">AI-Driven PID Controller for Stablecoins</div>
+                      <div className="welcome-flow">
+                        <div className="flow-step">1️⃣ <strong>Crash/Pump</strong> — Simulate BTC price movement</div>
+                        <div className="flow-step">2️⃣ <strong>Run Agent Cycle</strong> — AI analyzes & decides</div>
+                        <div className="flow-step">3️⃣ <strong>Trigger Swap</strong> — Apply new parameters</div>
+                      </div>
+                      <div className="welcome-cta">Press <strong>⚡ Full Demo</strong> to start</div>
+                    </div>
+                  ) : logs.length === 0 ? (
                     <p className="log-empty">The governor watches in silence…</p>
+                  ) : (
+                    logs.map((entry) => (
+                      <LogLine key={entry.id} entry={entry} />
+                    ))
                   )}
-                  {logs.map((entry) => (
-                    <LogLine key={entry.id} entry={entry} />
-                  ))}
                 </div>
               </div>
             </section>
@@ -506,7 +547,7 @@ const [state, setState] = useState(null)
           </div>
         </section>
 
-        {/* ── Latest Decision (siempre visible, se actualiza con Full Demo) ── */}
+{/* ── Latest Decision (siempre visible, se actualiza con Full Demo) ── */}
         <section className="section history-section">
           <div className="section-header">
             <h2>Latest Decision</h2>
@@ -518,27 +559,31 @@ const [state, setState] = useState(null)
                 <span className={`decision-badge decision-${decision.action}`}>
                   {decision.action?.toUpperCase()}
                 </span>
-                <p className="agent-quote">"{decision.reasoning}"</p>
+                <p className="agent-quote">"{decisionText}"</p>
                 {decision.new_kp != null && (
                   <p className="decision-params mono">
                     KP: {formatGain(state?.kp, 3)} → {formatGain(decision.new_kp, 3)} &nbsp;|&nbsp;
                     KI: {formatGain(state?.ki, 6)} → {formatGain(decision.new_ki, 6)}
                   </p>
                 )}
-                {decision && (
-                  <button
-                    className="sim-btn sim-tweet"
-                    onClick={() => {
-                      const text = `🤖 I just tested Grinta's AI Governance system at @grintaprotocol — ${decision.action?.toUpperCase()}: ${decision.reasoning?.slice(0, 200)}...`
-                      const url = `https://x.com/grintaprotocol/status/2047602458969419979?s=20`
-                      setTweetText(text)
-                      window.open(`${url}&text=${encodeURIComponent(text)}`, '_blank')
-                    }}
-                  >
-                    🐦 Share on X
-                  </button>
-                )}
+                <button
+                  className="sim-btn sim-tweet"
+                  onClick={() => {
+                    const text = `🤖 I just tested Grinta's AI Governance system at @grintaprotocol — ${decision.action?.toUpperCase()}: ${decision.reasoning?.slice(0, 200)}...`
+                    const url = `https://x.com/grintaprotocol/status/2047602458969419979?s=20`
+                    setTweetText(text)
+                    window.open(`${url}&text=${encodeURIComponent(text)}`, '_blank')
+                  }}
+                >
+                  🐦 Share on X
+                </button>
               </>
+            ) : isFirstVisit ? (
+              <div className="decision-waiting">
+                <div className="waiting-title">🤖 Agent Verdict</div>
+                <div className="waiting-subtitle">Waiting for Full Demo execution...</div>
+                <div className="waiting-hint">Trigger the demo to see the AI governor in action</div>
+              </div>
             ) : (
               <p className="agent-quote waiting">Waiting for Full Demo execution...</p>
             )}
