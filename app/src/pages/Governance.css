@@ -180,6 +180,22 @@
   color: var(--text-muted);
 }
 
+.audit-tag {
+  background: linear-gradient(135deg, #00d4aa 0%, #00a080 100%);
+  color: #000;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  margin-left: auto;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.audit-tag:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 212, 170, 0.4);
+}
+
 /* ── METRICS GRID ── */
 .metrics-grid {
   display: flex;
@@ -361,6 +377,19 @@
   background: linear-gradient(135deg, hsl(0, 75%, 55%), hsl(260, 60%, 55%), hsl(170, 100%, 36%));
   background-size: 200% 200%;
   animation: gradient-shift 4s ease infinite;
+}
+
+.sim-tweet {
+  background: #000;
+  color: #fff;
+  border: 1px solid #333;
+  margin-top: 0.75rem;
+  width: 100%;
+}
+.sim-tweet:hover:not(:disabled) {
+  background: #1a1a1a;
+  box-shadow: 0 4px 16px rgba(29, 161, 242, 0.3);
+}
 }
 
 @keyframes gradient-shift {

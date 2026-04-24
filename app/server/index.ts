@@ -643,6 +643,7 @@ app.post("/api/demo/crash", async (req, res) => {
     const archiveResult = await archiveToFilecoin();
     if (archiveResult) {
       log(`Archived: ${archiveResult.url}`);
+      broadcast("archive", archiveResult);
     }
 
     const finalState = await readState();

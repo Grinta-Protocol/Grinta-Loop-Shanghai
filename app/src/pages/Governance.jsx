@@ -90,12 +90,17 @@ function LogLine({ entry }) {
 }
 
 /* ── Parameter History Row ── */
-function HistoryTable({ rows }) {
+function HistoryTable({ rows, archiveUrl }) {
   return (
     <section className="section history-section">
       <div className="section-header">
         <h2>Parameter History</h2>
         <span className="section-tag">Session ledger</span>
+        {archiveUrl && (
+          <a href={archiveUrl} target="_blank" rel="noopener noreferrer" className="section-tag audit-tag">
+            📦 Filecoin
+          </a>
+        )}
       </div>
       <div className="marble-card table-wrap">
         <table className="history-table">
@@ -106,12 +111,13 @@ function HistoryTable({ rows }) {
               <th>KP</th>
               <th>KI</th>
               <th>Tx</th>
+              <th>Audit</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="table-empty">
+                <td colSpan={6} className="table-empty">
                   No parameter changes yet — the governor has not spoken.
                 </td>
               </tr>
@@ -124,8 +130,15 @@ function HistoryTable({ rows }) {
                   <td className="mono">{r.ki}</td>
                   <td>
                     <a href={`${VOYAGER_BASE}${r.txHash}`} target="_blank" rel="noopener noreferrer" className="tx-link mono">
-                      {r.txHash.slice(0, 8)}… ↗
+                      {r.txHash?.slice(0, 8)}… ↗
                     </a>
+                  </td>
+                  <td>
+                    {i === rows.length - 1 && archiveUrl ? (
+                      <a href={archiveUrl} target="_blank" rel="noopener noreferrer" className="tx-link">
+                        🔗 ↗
+                      </a>
+                    ) : "—"}
                   </td>
                 </tr>
               ))
@@ -142,8 +155,10 @@ export default function Governance() {
   const [state, setState] = useState(null)
   const [logs, setLogs] = useState([])
   const [history, setHistory] = useState([])
+  const [archiveUrl, setArchiveUrl] = useState(null)
   const [loading, setLoading] = useState({})
   const [decision, setDecision] = useState(null)
+  const [tweetText, setTweetText] = useState("")
   const logRef = useRef(null)
 
   const addLog = useCallback((entry) => {
@@ -182,6 +197,13 @@ export default function Governance() {
           }
           return prev
         })
+      }
+    })
+    es.addEventListener('archive', (e) => {
+      const a = JSON.parse(e.data)
+      if (a?.url) {
+        setArchiveUrl(a.url)
+        addLog({ ts: new Date().toISOString(), kind: 'info', msg: `Archived to Filecoin: ${a.url}` })
       }
     })
     es.onerror = () => addLog({ ts: new Date().toISOString(), kind: 'error', msg: 'SSE connection lost — reconnecting...' })
@@ -430,6 +452,19 @@ export default function Governance() {
                     KI: {formatGain(state?.ki, 6)} → {formatGain(decision.new_ki, 6)}
                   </p>
                 )}
+                {decision && (
+                  <button
+                    className="sim-btn sim-tweet"
+                    onClick={() => {
+                      const text = `🤖 I just tested Grinta's AI Governance system at @grintaprotocol — ${decision.action?.toUpperCase()}: ${decision.reasoning?.slice(0, 200)}...`
+                      const url = `https://x.com/grintaprotocol/status/2047602458969419979?s=20`
+                      setTweetText(text)
+                      window.open(`${url}&text=${encodeURIComponent(text)}`, '_blank')
+                    }}
+                  >
+                    🐦 Share on X
+                  </button>
+                )}
               </>
             ) : (
               <p className="agent-quote waiting">Waiting for Full Demo execution...</p>
@@ -438,7 +473,7 @@ export default function Governance() {
         </section>
 
         {/* ── Parameter History ── */}
-        <HistoryTable rows={history} />
+        <HistoryTable rows={history} archiveUrl={archiveUrl} />
 
         {/* ── Footer ── */}
         <footer className="gov-footer">
