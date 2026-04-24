@@ -68,6 +68,8 @@ Tier 4 — EMERGENCY:
 
 ## Rules
 - SYMMETRIC behavior: BTC DROP ⇒ raise KP magnitude; BTC PUMP ⇒ lower KP magnitude. Both sides must react.
+- **NEGATIVE DEVIATION means GRIT is ABOVE peg — the rate is already pushing DOWN. If KP > 1.5e-6 while deviation is negative, the system is OVER-CORRECTING — REDUCE KP regardless of BTC direction. This OVERRIDES the BTC-based tier.**
+- **NEVER describe the CURRENT value as "at maximum bound"**. The user prompt shows explicit headroom. If headroom-up > 0, you are NOT at max.
 - ALWAYS base new_kp / new_ki on the CURRENT values shown in the user prompt. Never jump to round hardcoded values like 2e-6 or 5e-6.
 - Respect delta cap: |new_kp − current_kp| ≤ 5e-7, |new_ki − current_ki| ≤ 5e-12 — larger proposals are REJECTED on-chain.
 - KI is especially conservative — integrator accumulates, overshoot oscillates.
@@ -163,19 +165,43 @@ export class ReasoningEngine {
     const proportionalHuman = Number(state.lastProportional) / 1e18;
     const integralHuman = Number(state.lastIntegral) / 1e18;
 
+    // Explicit headroom — the LLM cannot hallucinate "at max" when the
+    // current value is mid-range if we hand it the computed room.
+    const KP_CEIL = 1e-5, KP_FLOOR = 1e-7;
+    const KI_CEIL = 1e-10, KI_FLOOR = 1e-13;
+    const kpHeadroomUp = Math.max(0, KP_CEIL - kpHuman);
+    const kpHeadroomDown = Math.max(0, kpHuman - KP_FLOOR);
+    const kiHeadroomUp = Math.max(0, KI_CEIL - kiHuman);
+    const kiHeadroomDown = Math.max(0, kiHuman - KI_FLOOR);
+
+    const overCorrecting = state.deviationPct < 0 && kpHuman > 1.5e-6;
+
+    const devNote = state.deviationPct < 0
+      ? ' (GRIT ABOVE peg — rate pushing DOWN — system may be OVER-CORRECTING)'
+      : state.deviationPct > 0
+        ? ' (GRIT BELOW peg — rate pushing UP)'
+        : ' (on peg)';
+
     return `## Current Protocol State
 
 - **On-chain BTC (oracle)**: $${state.collateralPriceUsd.toFixed(2)}
 - **BTC Drop from Baseline ($60k)**: ${state.collateralDropPct.toFixed(2)}%
 - **GRIT Market Price**: $${state.marketPriceUsd.toFixed(6)}
 - **GRIT Redemption Price (target)**: $${state.redemptionPriceUsd.toFixed(6)}
-- **Peg Deviation**: ${state.deviationPct.toFixed(4)}%
+- **Peg Deviation**: ${state.deviationPct.toFixed(4)}%${devNote}
 - **Current KP**: ${kpHuman.toExponential(3)} WAD (raw: ${state.kp})
 - **Current KI**: ${kiHuman.toExponential(3)} WAD (raw: ${state.ki})
+- **KP headroom**: can raise by ${kpHeadroomUp.toExponential(2)}, can lower by ${kpHeadroomDown.toExponential(2)} (ceiling 1e-5, floor 1e-7)
+- **KI headroom**: can raise by ${kiHeadroomUp.toExponential(2)}, can lower by ${kiHeadroomDown.toExponential(2)} (ceiling 1e-10, floor 1e-13)
 - **Last Proportional Term**: ${proportionalHuman.toExponential(3)}
 - **Last Integral Term**: ${integralHuman.toExponential(3)}
 - **Guard Update Count**: ${state.guardUpdateCount} / 1000
 - **Guard Stopped**: ${state.guardStopped}
+${overCorrecting ? '\n## ALERT: OVER-CORRECTION DETECTED\nDeviation is NEGATIVE and KP is elevated. The rate is over-pushing GRIT DOWN. YOU MUST REDUCE KP (and KI if also elevated), regardless of BTC direction. Pull gains back toward baseline 1e-6 / 1e-12.\n' : ''}
+## DECISION RULE
+- If deviation is NEGATIVE (GRIT above peg) AND current KP > 1.5e-6 → REDUCE KP. This overrides BTC direction — the rate is already over-correcting.
+- NEVER describe the CURRENT value as "at max" — consult the KP/KI headroom above to see actual remaining range.
+- Respect per-update caps: |new_kp − current_kp| ≤ 5e-7, |new_ki − current_ki| ≤ 5e-12.
 
 What is your decision?`;
   }

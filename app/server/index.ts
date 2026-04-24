@@ -274,6 +274,8 @@ Tier 4 — EMERGENCY (severe crash/pump OR serious depeg):
 
 Rules:
 - BTC DROPPING ⇒ INCREASE KP magnitude. BTC PUMPING ⇒ DECREASE KP magnitude. Behavior is SYMMETRIC for crashes and pumps.
+- **NEGATIVE DEVIATION means GRIT is ABOVE peg and the rate is already pushing DOWN** — if KP is already elevated (> 1.5e-6) when deviation is negative, the system is OVER-CORRECTING. REDUCE KP regardless of BTC direction. This rule OVERRIDES the BTC-based tier.
+- **NEVER call the CURRENT value "at max"**. The user prompt shows explicit headroom (how much you can raise/lower). Read those fields — if headroom-up > 0, you are NOT at max.
 - ALWAYS propose values relative to the CURRENT KP/KI shown in the user prompt. Do NOT jump to round hardcoded values.
 - Keep |new − current| ≤ 5e-7 for KP and ≤ 5e-12 for KI, or the guard rejects the tx.
 - KI changes are especially conservative — the integrator accumulates, overshoot causes oscillation.
@@ -387,23 +389,42 @@ async function runAgentCycle() {
   log("Asking LLM for decision...");
 
   const btcDirection = state.btcDropPct > 0 ? 'DROPPING' : state.btcDropPct < -1 ? 'PUMPING' : 'STABLE';
+
+  // Compute explicit headroom so the LLM cannot hallucinate "at max" when the
+  // current value sits mid-range. Ceiling / floor are the policy bounds.
+  const KP_CEIL = 1e-5, KP_FLOOR = 1e-7;
+  const KI_CEIL = 1e-10, KI_FLOOR = 1e-13;
+  const kpHeadroomUp = Math.max(0, KP_CEIL - state.kp);
+  const kpHeadroomDown = Math.max(0, state.kp - KP_FLOOR);
+  const kiHeadroomUp = Math.max(0, KI_CEIL - state.ki);
+  const kiHeadroomDown = Math.max(0, state.ki - KI_FLOOR);
+
+  // Over-correction signal: negative deviation means GRIT is trading ABOVE
+  // redemption, so the rate is already pushing it back down. If gains are
+  // elevated and deviation is negative, the system is overshooting.
+  const overCorrecting = state.deviationPct < 0 && state.kp > 1.5e-6;
+
   const userPrompt = `## Current Protocol State
 - BTC Price (on-chain oracle): $${state.collateralPrice.toFixed(2)}
 - BTC Change from $60k baseline: ${state.btcDropPct > 0 ? 'DOWN' : 'UP'} ${Math.abs(state.btcDropPct).toFixed(2)}%
 - BTC Direction: **${btcDirection}**
 - GRIT Market Price: $${state.marketPrice.toFixed(6)}
 - GRIT Redemption Price (target): $${state.redemptionPrice.toFixed(6)}
-- Peg Deviation: ${state.deviationPct}%
+- Peg Deviation: ${state.deviationPct}% ${state.deviationPct < 0 ? '(GRIT ABOVE peg — rate pushing DOWN — system may be OVER-CORRECTING)' : state.deviationPct > 0 ? '(GRIT BELOW peg — rate pushing UP)' : '(on peg)'}
 - Current KP: ${state.kp.toExponential(3)} WAD
 - Current KI: ${state.ki.toExponential(3)} WAD
+- KP headroom: can raise by up to ${kpHeadroomUp.toExponential(2)}, can lower by up to ${kpHeadroomDown.toExponential(2)} (ceiling 1e-5, floor 1e-7)
+- KI headroom: can raise by up to ${kiHeadroomUp.toExponential(2)}, can lower by up to ${kiHeadroomDown.toExponential(2)} (ceiling 1e-10, floor 1e-13)
 - Last Proportional Term: ${state.lastProportional.toExponential(3)}
-
-## DECISION RULE (simple):
-- PUMPING → new_kp < current_kp AND new_ki < current_ki
-- DROPPING → new_kp > current_kp AND new_ki > current_ki
-- STABLE with small deviation → hold
-
-Propose values RELATIVE to current (current ± small step). Respect the per-update cap.
+${overCorrecting ? '\n## ALERT: OVER-CORRECTION DETECTED\nDeviation is NEGATIVE and KP is elevated. Rate is over-pushing GRIT DOWN. YOU MUST REDUCE KP (and KI if also elevated), regardless of BTC direction. Pull gains back toward baseline 1e-6 / 1e-12.\n' : ''}
+## DECISION RULE
+- If deviation is NEGATIVE (GRIT above peg) AND current KP > 1.5e-6 → REDUCE KP. This overrides BTC direction. The rate is already over-correcting.
+- Otherwise apply the tiered framework from the system prompt:
+  - DROPPING (BTC going down) AND peg slipping DOWN → raise KP magnitude
+  - PUMPING (BTC going up) → lower KP magnitude
+  - STABLE and deviation small → hold
+- NEVER propose a value at the absolute ceiling / floor unless you ARE already one delta step away. Consult KP/KI headroom above — they show how much room is left in each direction.
+- Propose values RELATIVE to current (current ± small step) and within the per-update cap (5e-7 for KP, 5e-12 for KI).
 
 What is your decision? (Respond ONLY with valid JSON)`;
 
