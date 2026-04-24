@@ -662,6 +662,34 @@ app.post("/api/demo/crash", async (req, res) => {
   }
 });
 
+// GET /api/history — load persisted decisions from JSONL
+app.get("/api/history", async (_req, res) => {
+  try {
+    const jsonlPath = join(__dirname, "..", "..", "agent", "decisions.jsonl");
+    if (!existsSync(jsonlPath)) {
+      res.json({ rows: [], archiveUrl: null });
+      return;
+    }
+
+    const content = readFileSync(jsonlPath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    const decisions = lines.map((line) => JSON.parse(line)).reverse(); // newest first
+
+    // Get stored archive URL
+    let archiveUrl = null;
+    try {
+      if (existsSync(IPNS_CACHE_FILE)) {
+        const cache = JSON.parse(readFileSync(IPNS_CACHE_FILE, "utf-8"));
+        archiveUrl = `https://ipfs.io/ipns/${cache.ipnsName}`;
+      }
+    } catch {}
+
+    res.json({ rows: decisions, archiveUrl });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/stream", (req, res) => {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",

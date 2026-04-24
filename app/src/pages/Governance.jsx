@@ -215,6 +215,57 @@ export default function Governance() {
     fetch(`${API}/state`).then(r => r.json()).then(setState).catch(() => {})
   }, [])
 
+  // Load persisted history on mount
+  useEffect(() => {
+    fetch(`${API}/history`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.rows?.length) {
+          const formatted = data.rows.map((r) => ({
+            time: new Date(r.timestamp).toLocaleTimeString(),
+            action: `Governor: ${r.action}`,
+            kpChange: `${formatGain(Number(r.current_kp) / 1e18, 2)}`,
+            ki: `${formatGain(Number(r.current_ki) / 1e18, 4)}`,
+            txHash: r.tx_hash || '—',
+          }))
+          setHistory(formatted)
+        }
+        if (data.archiveUrl) {
+          setArchiveUrl(data.archiveUrl)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Refresh history after demo completes
+  const refreshHistory = useCallback(() => {
+    fetch(`${API}/history`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.rows?.length) {
+          const formatted = data.rows.map((r) => ({
+            time: new Date(r.timestamp).toLocaleTimeString(),
+            action: `Governor: ${r.action}`,
+            kpChange: `${formatGain(Number(r.current_kp) / 1e18, 2)}`,
+            ki: `${formatGain(Number(r.current_ki) / 1e18, 4)}`,
+            txHash: r.tx_hash || '—',
+          }))
+          setHistory(formatted)
+        }
+        if (data.archiveUrl) {
+          setArchiveUrl(data.archiveUrl)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Refresh history when archive is created
+  useEffect(() => {
+    if (archiveUrl) {
+      refreshHistory()
+    }
+  }, [archiveUrl, refreshHistory])
+
   // Auto-scroll
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
