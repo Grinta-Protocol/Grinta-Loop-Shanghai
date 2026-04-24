@@ -333,17 +333,24 @@ export default function Governance() {
             <div className="sim-buttons-grid">
               <button
                 className="sim-btn sim-crash"
+                onClick={() => apiCall('/cheat/crash', { percent: 5 }, 'crash5')}
+                disabled={loading.crash5}
+              >
+                {loading.crash5 ? '⏳' : '📉'} Crash BTC −5%
+              </button>
+              <button
+                className="sim-btn sim-crash"
                 onClick={() => apiCall('/cheat/crash', { percent: 10 }, 'crash10')}
                 disabled={loading.crash10}
               >
                 {loading.crash10 ? '⏳' : '📉'} Crash BTC −10%
               </button>
               <button
-                className="sim-btn sim-crash"
-                onClick={() => apiCall('/cheat/crash', { percent: 20 }, 'crash20')}
-                disabled={loading.crash20}
+                className="sim-btn sim-pump"
+                onClick={() => apiCall('/cheat/pump', { percent: 5 }, 'pump5')}
+                disabled={loading.pump5}
               >
-                {loading.crash20 ? '⏳' : '📉'} Crash BTC −20%
+                {loading.pump5 ? '⏳' : '📈'} Pump BTC +5%
               </button>
               <button
                 className="sim-btn sim-pump"
@@ -351,13 +358,6 @@ export default function Governance() {
                 disabled={loading.pump10}
               >
                 {loading.pump10 ? '⏳' : '📈'} Pump BTC +10%
-              </button>
-              <button
-                className="sim-btn sim-pump"
-                onClick={() => apiCall('/cheat/pump', { percent: 20 }, 'pump20')}
-                disabled={loading.pump20}
-              >
-                {loading.pump20 ? '⏳' : '📈'} Pump BTC +20%
               </button>
               <button
                 className="sim-btn sim-reset"
@@ -389,7 +389,7 @@ export default function Governance() {
 
             <button
               className="sim-btn sim-demo"
-              onClick={() => apiCall('/demo/crash', { percent: 20 }, 'demo')}
+              onClick={() => apiCall('/demo/crash', { percent: 10 }, 'demo')}
               disabled={loading.demo}
             >
               {loading.demo ? '⚡ Running full demo...' : '⚡ CRASH + AGENT + SWAP — Full Demo'}

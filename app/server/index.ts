@@ -352,33 +352,54 @@ app.get("/api/state", async (_req, res) => {
   }
 });
 
+// Incremental oracle nudge: reads the CURRENT on-chain BTC price and applies
+// a ±pct delta. Previous version always nudged off the $60k baseline, so
+// repeated clicks clamped to the same target (e.g. +10% always = $66k).
+async function nudgeOracle(pctSigned: number): Promise<{ txHash: string; newPrice: number; oldPrice: number }> {
+  const priceCall = await callWithRetry(
+    "oracle.get_price_wad",
+    { contractAddress: CFG.ORACLE_RELAYER, entrypoint: "get_price_wad", calldata: [CFG.WBTC, CFG.USDC] },
+    ["0"],
+  );
+  const currentWad = toBigInt(priceCall?.[0]);
+  if (currentWad === 0n) throw new Error("oracle returned 0 price — cannot nudge");
+
+  // BigInt basis-points math to preserve precision at $60k+ * 1e18 scale
+  const bp = BigInt(Math.round(pctSigned * 100));
+  const newWad = (currentWad * (10000n + bp)) / 10000n;
+
+  const oldUsd = Number(currentWad / WAD);
+  const newUsd = Number(newWad / WAD);
+  log(`CHEAT: BTC ${pctSigned >= 0 ? "+" : ""}${pctSigned}% → $${oldUsd} → $${newUsd}`);
+
+  const { transaction_hash } = await deployer.execute(
+    {
+      contractAddress: CFG.ORACLE_RELAYER,
+      entrypoint: "update_price",
+      calldata: CallData.compile({
+        base_token: CFG.WBTC,
+        quote_token: CFG.USDC,
+        price_usd_wad: cairo.uint256(newWad),
+      }),
+    },
+    { maxFee: 10n ** 16n },
+  );
+
+  log(`Oracle tx: ${transaction_hash}`);
+  broadcast("tx", { hash: transaction_hash, type: "oracle_update" });
+  await provider.waitForTransaction(transaction_hash);
+  log("Oracle updated!");
+
+  const state = await readState();
+  broadcast("state", state);
+  return { txHash: transaction_hash, newPrice: newUsd, oldPrice: oldUsd };
+}
+
 app.post("/api/cheat/crash", async (req, res) => {
   try {
-    const pct = Number(req.body.percent || 20);
-    const newPrice = BigInt(Math.round(60000 * (1 - pct / 100))) * WAD;
-    log(`CHEAT: Crashing BTC by ${pct}% → $${Number(newPrice / WAD)}`);
-
-    const { transaction_hash } = await deployer.execute(
-      {
-        contractAddress: CFG.ORACLE_RELAYER,
-        entrypoint: "update_price",
-        calldata: CallData.compile({
-          base_token: CFG.WBTC,
-          quote_token: CFG.USDC,
-          price_usd_wad: cairo.uint256(newPrice),
-        }),
-      },
-      { maxFee: 10n ** 16n },
-    );
-
-    log(`Oracle tx: ${transaction_hash}`);
-    broadcast("tx", { hash: transaction_hash, type: "oracle_update" });
-    await provider.waitForTransaction(transaction_hash);
-    log("Oracle updated!");
-
-    const state = await readState();
-    broadcast("state", state);
-    res.json({ txHash: transaction_hash, newPrice: Number(newPrice / WAD) });
+    const pct = Number(req.body.percent || 10);
+    const result = await nudgeOracle(-pct);
+    res.json(result);
   } catch (e: any) {
     log(`CHEAT ERROR: ${e.message}`);
     res.status(500).json({ error: e.message });
@@ -387,31 +408,9 @@ app.post("/api/cheat/crash", async (req, res) => {
 
 app.post("/api/cheat/pump", async (req, res) => {
   try {
-    const pct = Number(req.body.percent || 20);
-    const newPrice = BigInt(Math.round(60000 * (1 + pct / 100))) * WAD;
-    log(`CHEAT: Pumping BTC by ${pct}% → $${Number(newPrice / WAD)}`);
-
-    const { transaction_hash } = await deployer.execute(
-      {
-        contractAddress: CFG.ORACLE_RELAYER,
-        entrypoint: "update_price",
-        calldata: CallData.compile({
-          base_token: CFG.WBTC,
-          quote_token: CFG.USDC,
-          price_usd_wad: cairo.uint256(newPrice),
-        }),
-      },
-      { maxFee: 10n ** 16n },
-    );
-
-    log(`Oracle tx: ${transaction_hash}`);
-    broadcast("tx", { hash: transaction_hash, type: "oracle_update" });
-    await provider.waitForTransaction(transaction_hash);
-    log("Oracle updated!");
-
-    const state = await readState();
-    broadcast("state", state);
-    res.json({ txHash: transaction_hash, newPrice: Number(newPrice / WAD) });
+    const pct = Number(req.body.percent || 10);
+    const result = await nudgeOracle(pct);
+    res.json(result);
   } catch (e: any) {
     log(`CHEAT ERROR: ${e.message}`);
     res.status(500).json({ error: e.message });
@@ -473,26 +472,11 @@ app.post("/api/swap/trigger", async (_req, res) => {
 // Full demo sequence: cheat → agent → swap → read
 app.post("/api/demo/crash", async (req, res) => {
   try {
-    const pct = Number(req.body.percent || 20);
+    const pct = Number(req.body.percent || 10);
+    log(`DEMO: Full crash sequence — BTC -${pct}% (incremental)`);
 
-    // 1. Crash oracle
-    const newPrice = BigInt(Math.round(60000 * (1 - pct / 100))) * WAD;
-    log(`DEMO: Full crash sequence — BTC -${pct}%`);
-
-    const { transaction_hash: oracleTx } = await deployer.execute(
-      {
-        contractAddress: CFG.ORACLE_RELAYER,
-        entrypoint: "update_price",
-        calldata: CallData.compile({
-          base_token: CFG.WBTC,
-          quote_token: CFG.USDC,
-          price_usd_wad: cairo.uint256(newPrice),
-        }),
-      },
-      { maxFee: 10n ** 16n },
-    );
-    await provider.waitForTransaction(oracleTx);
-    broadcast("tx", { hash: oracleTx, type: "oracle_update" });
+    // 1. Crash oracle (incremental from current on-chain price)
+    const { txHash: oracleTx } = await nudgeOracle(-pct);
     log("Step 1/3: Oracle updated");
 
     // 2. Agent cycle
