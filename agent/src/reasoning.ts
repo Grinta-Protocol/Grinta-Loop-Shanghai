@@ -104,29 +104,53 @@ export class ReasoningEngine {
    */
   async analyze(state: ProtocolState): Promise<AgentDecision> {
     const userPrompt = this.buildPrompt(state);
+    const maxRetries = 4;
+    const baseDelay = 1000;
+    let lastError: Error | null = null;
 
-    try {
-      const response = await this.client.chat.completions.create({
-        model: CONFIG.COMMONSTACK_MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 2000, // GLM-5.1 uses reasoning tokens internally — needs headroom
-      });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: CONFIG.COMMONSTACK_MODEL,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.1,
+          max_tokens: 2000, // GLM-5.1 uses reasoning tokens internally — needs headroom
+        });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        return this.fallbackDecision("LLM returned empty response");
+        const content = response.choices[0]?.message?.content;
+        if (!content) {
+          return this.fallbackDecision("LLM returned empty response");
+        }
+
+        return this.parseResponse(content);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const msg = lastError.message;
+
+        // Check for 429 rate limit
+        if (msg.includes("429") || msg.toLowerCase().includes("rate")) {
+          const delay = baseDelay * Math.pow(2, attempt);
+          console.warn(`[Reasoning] Rate limited, retry ${attempt + 1}/${maxRetries} in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+
+        // Other error - only retry once
+        if (attempt < maxRetries - 1) {
+          console.error(`[Reasoning] LLM error: ${msg}, retrying...`);
+          await new Promise(r => setTimeout(r, baseDelay));
+          continue;
+        }
+
+        console.error("[Reasoning] LLM call failed after retries:", msg);
+        return this.fallbackDecision(`LLM call failed: ${msg}`);
       }
-
-      return this.parseResponse(content);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error("LLM error:", msg);
-      return this.fallbackDecision(`LLM call failed: ${msg}`);
     }
+
+    return this.fallbackDecision(`LLM call failed after ${maxRetries} attempts: ${lastError?.message}`);
   }
 
   private buildPrompt(state: ProtocolState): string {

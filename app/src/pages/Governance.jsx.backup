@@ -7,6 +7,7 @@ const API = import.meta.env.VITE_API_URL || '/api'
 const VOYAGER_BASE = 'https://sepolia.voyager.online/tx/'
 
 // Format PID gains: HAI-style scientific notation for small values, fixed otherwise.
+// Kp=1e-6 → "1.00e-6", Ki=1e-12 → "1.00e-12", Kp=2.3 → "2.300"
 function formatGain(n, fractionDigits = 3) {
   if (n == null || !Number.isFinite(n)) return '—'
   if (n === 0) return '0'
@@ -34,6 +35,7 @@ function MetricCard({ label, sublabel, value, tone, icon, trend }) {
           <p className="metric-label">{label}</p>
           {sublabel && <p className="metric-sublabel">{sublabel}</p>}
         </div>
+        {icon && <span className="metric-icon">{icon}</span>}
       </div>
       <div className="metric-value-row">
         <span className={`metric-value mono ${toneClass}`}>{value}</span>
@@ -92,7 +94,7 @@ function LogLine({ entry }) {
 /* ── Parameter History Row ── */
 function HistoryTable({ rows }) {
   return (
-    <section className="section history-section">
+    <section className="section">
       <div className="section-header">
         <h2>Parameter History</h2>
         <span className="section-tag">Session ledger</span>
@@ -259,33 +261,43 @@ export default function Governance() {
           </div>
         </header>
 
-        {/* ── COLUMNA IZQUIERDA: Protocol State / Metrics ── */}
-        <section className="section content-left">
+        {/* ── Protocol State ── */}
+        <section className="section">
+          <div className="section-header">
+            <h2>Protocol State</h2>
+            <span className="section-tag">Live · On-chain</span>
+          </div>
           <div className="metrics-grid">
             <MetricCard
               label="BTC Price" sublabel="Oracle"
               value={state ? `$${state.collateralPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+              icon="₿"
             />
             <MetricCard
               label="GRIT Price" sublabel="Market"
               value={state ? `$${state.marketPrice.toFixed(3)}` : '—'}
+              icon="◎"
             />
             <MetricCard
               label="Redemption Price" sublabel="target peg"
               value={state ? `$${state.redemptionPrice.toFixed(4)}` : '—'}
+              icon="◎"
             />
             <MetricCard
               label="Deviation" sublabel="from peg"
               value={state ? `${state.deviationPct >= 0 ? '+' : ''}${state.deviationPct.toFixed(2)}%` : '—'}
               tone={devTone}
+              icon="⚖"
             />
             <MetricCard
               label="KP" sublabel="Proportional"
               value={state ? formatGain(state.kp, 3) : '—'}
+              icon="⚙"
             />
             <MetricCard
               label="KI" sublabel="Integral"
               value={state ? formatGain(state.ki, 6) : '—'}
+              icon="∑"
             />
             <MetricCard
               label="Redemption Rate" sublabel="annualized"
@@ -297,6 +309,7 @@ export default function Governance() {
                 const sign = pct >= 0 ? '+' : '';
                 return `${sign}${pct.toFixed(2)}%`;
               })() : '—'}
+              icon="↗"
               trend={
                 state?.rateDirection === 'up' ? <span className="tone-success">▲</span>
                 : state?.rateDirection === 'down' ? <span className="tone-danger">▼</span>
@@ -306,33 +319,8 @@ export default function Governance() {
           </div>
         </section>
 
-        {/* ── COLUMNA CENTRO: Agent Reasoning ── */}
-        <div className="content-center">
-          {/* Agent Reasoning */}
-          <section className="section">
-            <div className="marble-card log-card">
-              <div className="log-titlebar">
-                <div className="titlebar-dots">
-                  <span className="dot dot-red" />
-                  <span className="dot dot-yellow" />
-                  <span className="dot dot-green" />
-                </div>
-                <span className="titlebar-text mono">Agent Reasoning | Live deliberation | On Chain</span>
-              </div>
-              <div className="log-scroll" ref={logRef}>
-                {logs.length === 0 && (
-                  <p className="log-empty">The governor watches in silence…</p>
-                )}
-                {logs.map((entry) => (
-                  <LogLine key={entry.id} entry={entry} />
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* ── COLUMNA DERECHA: Market Simulation ── */}
-        <section className="section content-right">
+        {/* ── Market Simulation ── */}
+        <section className="section">
           <div className="marble-card sim-card">
             <div className="sim-glow sim-glow-tl" />
             <div className="sim-glow sim-glow-br" />
@@ -399,41 +387,61 @@ export default function Governance() {
               </button>
             </div>
 
-            <div className="sim-divider" />
-
             <button
               className="sim-btn sim-demo"
               onClick={() => apiCall('/demo/crash', { percent: 10 }, 'demo')}
               disabled={loading.demo}
             >
-              {loading.demo ? '⚡ Running...' : '⚡ Full Demo'}
+              {loading.demo ? '⚡ Running full demo...' : '⚡ CRASH + AGENT + SWAP — Full Demo'}
             </button>
           </div>
         </section>
 
-        {/* ── Latest Decision (siempre visible, se actualiza con Full Demo) ── */}
-        <section className="section history-section">
+        {/* ── Latest Decision ── */}
+        {decision && (
+          <section className="section">
+            <div className="section-header">
+              <h2>Latest Decision</h2>
+              <span className="section-tag">Agent verdict</span>
+            </div>
+            <div className="marble-card decision-card">
+              <span className={`decision-badge decision-${decision.action}`}>
+                {decision.action?.toUpperCase()}
+              </span>
+              <p className="agent-quote">"{decision.reasoning}"</p>
+              {decision.new_kp != null && (
+                <p className="decision-params mono">
+                  KP: {formatGain(state?.kp, 3)} → {formatGain(decision.new_kp, 3)} &nbsp;|&nbsp;
+                  KI: {formatGain(state?.ki, 6)} → {formatGain(decision.new_ki, 6)}
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* ── Agent Log ── */}
+        <section className="section">
           <div className="section-header">
-            <h2>Latest Decision</h2>
-            <span className="section-tag">Agent verdict</span>
+            <h2>Agent Reasoning</h2>
+            <span className="section-tag">Live deliberation</span>
           </div>
-          <div className="marble-card decision-card">
-            {decision ? (
-              <>
-                <span className={`decision-badge decision-${decision.action}`}>
-                  {decision.action?.toUpperCase()}
-                </span>
-                <p className="agent-quote">"{decision.reasoning}"</p>
-                {decision.new_kp != null && (
-                  <p className="decision-params mono">
-                    KP: {formatGain(state?.kp, 3)} → {formatGain(decision.new_kp, 3)} &nbsp;|&nbsp;
-                    KI: {formatGain(state?.ki, 6)} → {formatGain(decision.new_ki, 6)}
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="agent-quote waiting">Waiting for Full Demo execution...</p>
-            )}
+          <div className="marble-card log-card">
+            <div className="log-titlebar">
+              <div className="titlebar-dots">
+                <span className="dot dot-red" />
+                <span className="dot dot-yellow" />
+                <span className="dot dot-green" />
+              </div>
+              <span className="titlebar-text mono">agent.governor.starknet</span>
+            </div>
+            <div className="log-scroll" ref={logRef}>
+              {logs.length === 0 && (
+                <p className="log-empty">The governor watches in silence…</p>
+              )}
+              {logs.map((entry) => (
+                <LogLine key={entry.id} entry={entry} />
+              ))}
+            </div>
           </div>
         </section>
 

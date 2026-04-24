@@ -198,6 +198,90 @@ Example INCREASE (crashing): {"action":"adjust","new_kp":2e-6,"new_ki":2e-12,"re
 Example DECREASE (pumping): {"action":"adjust","new_kp":5e-7,"new_ki":5e-13,"reasoning":"BTC pumping, decreasing gains."}
 Example EMERGENCY: use "adjust_emergency" when the move must exceed the normal step cap.`;
 
+// ---- LLM Wrapper with Rate Limiting & Retry ----
+
+interface LLMResponse {
+  choices: Array<{
+    message: {
+      content: string;
+    };
+  }>;
+}
+
+// Token bucket for rate limiting
+const rateLimit = {
+  tokens: 5,        // max concurrent requests
+  refillRate: 2000,  // ms between refills
+  lastRefill: Date.now(),
+};
+
+function waitForToken(): Promise<void> {
+  return new Promise((resolve) => {
+    if (rateLimit.tokens > 0) {
+      rateLimit.tokens--;
+      resolve();
+    } else {
+      setTimeout(() => resolve(), rateLimit.refillRate);
+    }
+  });
+}
+
+function refillTokens() {
+  const now = Date.now();
+  const elapsed = now - rateLimit.lastRefill;
+  if (elapsed >= rateLimit.refillRate) {
+    rateLimit.tokens = Math.min(5, rateLimit.tokens + 1);
+    rateLimit.lastRefill = now;
+  }
+}
+
+// Retry with exponential backoff
+async function callLLMWithRetry(
+  prompt: { role: "system" | "user"; content: string }[]
+): Promise<LLMResponse> {
+  const maxRetries = 4;
+  const baseDelay = 1000; // 1s base
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Rate limiting
+      await waitForToken();
+      refillTokens();
+
+      const response = await llm.chat.completions.create({
+        model: CFG.LLM_MODEL,
+        messages: prompt,
+        temperature: 0.1,
+        max_tokens: 2000,
+      });
+
+      return response as unknown as LLMResponse;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Check for 429
+      if (lastError.message.includes("429") || lastError.message.includes("rate")) {
+        const delay = baseDelay * Math.pow(2, attempt);
+        log(`LLM rate limited, retrying in ${delay}ms...`, { attempt: attempt + 1 });
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      // Other error - maybe retry once
+      if (attempt < maxRetries - 1) {
+        log(`LLM error: ${lastError.message}, retrying...`, { attempt: attempt + 1 });
+        await new Promise((r) => setTimeout(r, baseDelay));
+        continue;
+      }
+
+      throw lastError;
+    }
+  }
+
+  throw lastError || new Error("LLM call failed after retries");
+}
+
 async function runAgentCycle() {
   log("Reading on-chain state...");
   const state = await readState();
@@ -233,15 +317,10 @@ Propose values RELATIVE to current (current ± small step). Respect the per-upda
 
 What is your decision? (Respond ONLY with valid JSON)`;
 
-  const response = await llm.chat.completions.create({
-    model: CFG.LLM_MODEL,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.1,
-    max_tokens: 2000,
-  });
+  const response = await callLLMWithRetry([
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: userPrompt },
+  ]);
 
   const content = response.choices[0]?.message?.content || "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
