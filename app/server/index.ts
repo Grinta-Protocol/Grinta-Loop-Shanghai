@@ -452,9 +452,44 @@ What is your decision? (Respond ONLY with valid JSON)`;
 
   if (decision.action === "hold") return decision;
 
-  const newKp = BigInt(Math.round((decision.new_kp ?? 6.667e-7) * 1e18));
-  const newKi = BigInt(Math.round((decision.new_ki ?? 6.667e-13) * 1e18));
+  let newKp = BigInt(Math.round((decision.new_kp ?? 6.667e-7) * 1e18));
+  let newKi = BigInt(Math.round((decision.new_ki ?? 6.667e-13) * 1e18));
   const isEmergency = decision.action === "adjust_emergency";
+
+  // Clamp against on-chain policy. LLM can round float→int slightly past the
+  // delta cap (e.g. 7.334e-13 vs 7.33e-13), busting the guard's _abs_diff check.
+  // Mirror the deployed policy here.
+  const POLICY = {
+    KP_MIN: 333_333_333_333n,        // 3.333e-7 WAD
+    KP_MAX: 1_000_000_000_000n,      // 1e-6 WAD
+    KI_MIN: 333_333n,                // 3.333e-13 WAD
+    KI_MAX: 1_000_000n,              // 1e-12 WAD
+    MAX_KP_DELTA: 66_666_666_667n,   // 6.667e-8 WAD
+    MAX_KI_DELTA: 66_667n,           // 6.667e-14 WAD
+  };
+  const currentKp = BigInt(state.kpRaw);
+  const currentKi = BigInt(state.kiRaw);
+
+  function clampDelta(proposed: bigint, current: bigint, maxDelta: bigint): bigint {
+    const delta = proposed > current ? proposed - current : current - proposed;
+    if (delta <= maxDelta) return proposed;
+    return proposed > current ? current + maxDelta : current - maxDelta;
+  }
+  function clampBounds(v: bigint, lo: bigint, hi: bigint): bigint {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+  }
+  const kpClamped = clampBounds(clampDelta(newKp, currentKp, POLICY.MAX_KP_DELTA), POLICY.KP_MIN, POLICY.KP_MAX);
+  const kiClamped = clampBounds(clampDelta(newKi, currentKi, POLICY.MAX_KI_DELTA), POLICY.KI_MIN, POLICY.KI_MAX);
+  if (kpClamped !== newKp) {
+    log(`Clamped new_kp: ${newKp} → ${kpClamped} (LLM proposed ${decision.new_kp}, exceeded delta or bounds)`);
+    newKp = kpClamped;
+  }
+  if (kiClamped !== newKi) {
+    log(`Clamped new_ki: ${newKi} → ${kiClamped} (LLM proposed ${decision.new_ki}, exceeded delta or bounds)`);
+    newKi = kiClamped;
+  }
 
   log(`Proposing KP=${decision.new_kp}, KI=${decision.new_ki}, emergency=${isEmergency}`);
 
