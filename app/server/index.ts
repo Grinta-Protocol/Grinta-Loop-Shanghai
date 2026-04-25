@@ -345,7 +345,7 @@ async function callLLMWithRetry(
         model: CFG.LLM_MODEL,
         messages: prompt,
         temperature: 0.1,
-        max_tokens: 2000,
+        max_tokens: 4000,
       });
 
       return response as unknown as LLMResponse;
@@ -434,9 +434,15 @@ What is your decision? (Respond ONLY with valid JSON)`;
   ]);
 
   const content = response.choices[0]?.message?.content || "";
+  const finishReason = (response as any).choices?.[0]?.finish_reason;
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    log("LLM returned no valid JSON", { raw: content.slice(0, 300) });
+    console.log("[server] LLM raw response (no JSON found):", content);
+    log("LLM returned no valid JSON", {
+      finishReason,
+      contentLength: content.length,
+      rawTail: content.slice(-300),
+    });
     return { action: "hold", reasoning: "LLM parse failure" };
   }
 
