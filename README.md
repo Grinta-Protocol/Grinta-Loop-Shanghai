@@ -132,9 +132,11 @@ The agent intervention happens at the same timestamp as the market shock, creati
 
 Total: ~2,540 lines. Full mechanism design and parameters in [DESIGN.md](./DESIGN.md).
 
-## Sepolia Deployment (V11 — Current)
+## Sepolia Deployment (V12 — Current)
 
-All V11 addresses are in [`deployed_v11.json`](./deployed_v11.json). Deployment history (V9 → V11) and live ParameterGuard policy in [PROTOCOL_STATUS.md](./PROTOCOL_STATUS.md).
+V12 addresses are in [`deployed_v12.json`](./deployed_v12.json) (only ParameterGuard changed; the rest is the V11 deployment in [`deployed_v11.json`](./deployed_v11.json)). Deployment history (V9 → V12) and live ParameterGuard policy in [PROTOCOL_STATUS.md](./PROTOCOL_STATUS.md).
+
+**V12 highlight**: ParameterGuard now uses ERC-8004 native authorization. The agent's authority is anchored to a portable NFT (agent_id 36 on the official Sepolia IdentityRegistry `0x7856876f...e417`) bound to the agent wallet via SNIP-6. Transferring the NFT revokes proposal authority automatically — no contract redeploy needed.
 
 Pool: USDC(token0)/GRIT(token1), fee=0, tick_spacing=1000, extension=GrintaHook
 Init tick is computed dynamically based on token address ordering — see [INVARIANTS.md](./INVARIANTS.md) for the tick math (Ekubo uses base 1.000001, not Uniswap's 1.0001) and the sign rule (NEGATIVE when token0 has more decimals than token1).

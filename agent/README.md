@@ -44,11 +44,16 @@ npm run start
 AGENT_ADDRESS=0x01f8975c5a1c6d2764bd30dddf4d6ab80c59e8287e5f796a5ba2490dcbf2dab6
 AGENT_PRIVATE_KEY=0x...
 
-# Contract addresses (V11 — see deployed_v11.json at repo root)
-PARAMETER_GUARD_ADDRESS=0x051f52ee6579d2470038e11bb85744bce4f2ebf347478ff925e1c5aa25f616aa
+# Contract addresses (V12 — see deployed_v12.json at repo root)
+# Only ParameterGuard changed in V12; PID/Hook/SAFEEngine are V11, unchanged.
+PARAMETER_GUARD_ADDRESS=0x7acc10ba0a293c62b3a3bba5c885beac8120a12b33b7f31bdd99a5b9dd92278
 PID_CONTROLLER_ADDRESS=0x077ce1bdf9671da93542730a7f20825b8edabd2a5dfedaab23a2ac1c47791125
 GRINTA_HOOK_ADDRESS=0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147
 SAFE_ENGINE_ADDRESS=0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272
+
+# ERC-8004 IdentityRegistry (Sepolia) — V12 Guard authorizes the agent by
+# looking up the bound wallet for agent_id 36 in this registry.
+IDENTITY_REGISTRY_ADDRESS=0x7856876f4c8e1880bc0a2e4c15f4de3085bc2bad5c7b0ae472740f8f558e417
 
 # LLM provider (OpenAI-compatible)
 COMMONSTACK_API_KEY=your_key

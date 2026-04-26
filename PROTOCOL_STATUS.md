@@ -1,7 +1,7 @@
 # Grinta Protocol Status
 
 > Living document tracking what's built, what's live, and what's next.
-> Last updated: 2026-04-25
+> Last updated: 2026-04-26
 
 ---
 
@@ -19,13 +19,13 @@ Full mechanism design: [DESIGN.md](./DESIGN.md). Invariants and failure modes: [
 
 ## Built — 10 Core Contracts + 2 Mocks
 
-All contracts compile clean, **70/70 tests pass**. V11 deployed and live on Sepolia. The Phase 4 agent loop (LLM → ParameterGuard → PIDController) has run continuously through multiple iterations of policy and prompt tuning.
+All contracts compile clean, **70/70 tests pass**. V12 deployed and live on Sepolia. The Phase 4 agent loop (LLM → ParameterGuard → PIDController) has run continuously through multiple iterations of policy and prompt tuning. V12 introduces ERC-8004 native authorization on ParameterGuard.
 
 | Phase | Contracts | Status |
 |---|---|---|
-| Phase 1 — Core | SAFEEngine, CollateralJoin, PIDController, GrintaHook, SafeManager, OracleRelayer | Live (V11) |
+| Phase 1 — Core | SAFEEngine, CollateralJoin, PIDController, GrintaHook, SafeManager, OracleRelayer | Live (V11, unchanged in V12) |
 | Phase 3 — Liquidation | LiquidationEngine, CollateralAuctionHouse, AccountingEngine | Live (unchanged since V9) |
-| Phase 4 — Agent | ParameterGuard | Live (V11) |
+| Phase 4 — Agent | ParameterGuard (ERC-8004 native auth) | Live (V12) |
 
 ### Shared Code
 
@@ -36,24 +36,26 @@ All contracts compile clean, **70/70 tests pass**. V11 deployed and live on Sepo
 
 ---
 
-## Live Deployment — Sepolia V11
+## Live Deployment — Sepolia V12
 
-All addresses in [`deployed_v11.json`](./deployed_v11.json).
+V12 addresses in [`deployed_v12.json`](./deployed_v12.json); historical V11 in [`deployed_v11.json`](./deployed_v11.json).
 
-**Headline change vs V10.1:** PIDController and ParameterGuard redeployed for the RAY-scale proportional migration. Everything else (SAFEEngine, GrintaHook, etc.) reused as-is. V11 also bakes:
-- `PID.reset_deviation()` admin function (clears integrator windup)
-- `Guard.set_pid_controller()` admin function (re-point Guard without redeploy)
-- Re-pegged SAFEEngine `redemption_price = 1e27 RAY` ($1 fresh start)
+**Headline change vs V11:** ParameterGuard redeployed with ERC-8004 native authorization. The agent's authority is no longer stored in a local `agent` field — it's anchored to a portable NFT (agent_id 36) in the official ERC-8004 IdentityRegistry. Transferring the NFT revokes proposal authority automatically. Constructor now requires `identity_registry` and `proposer_agent_id`. PID admin transferred V11→V12 in the same migration.
 
-### Key addresses (V11)
+Everything else (PIDController, SAFEEngine, GrintaHook, OracleRelayer, etc.) is **unchanged** from V11.
+
+### Key addresses (V12)
 
 | Component | Address |
 |---|---|
-| Agent wallet | `0x01f8975c5a1c6d2764bd30dddf4d6ab80c59e8287e5f796a5ba2490dcbf2dab6` |
-| PIDController | `0x077ce1bdf9671da93542730a7f20825b8edabd2a5dfedaab23a2ac1c47791125` |
-| ParameterGuard | `0x051f52ee6579d2470038e11bb85744bce4f2ebf347478ff925e1c5aa25f616aa` |
-| GrintaHook | `0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147` |
-| SAFEEngine | `0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272` |
+| Agent wallet (bound to NFT 36) | `0x01f8975c5a1c6d2764bd30dddf4d6ab80c59e8287e5f796a5ba2490dcbf2dab6` |
+| **ParameterGuard V12** | `0x7acc10ba0a293c62b3a3bba5c885beac8120a12b33b7f31bdd99a5b9dd92278` |
+| ERC-8004 IdentityRegistry | `0x7856876f4c8e1880bc0a2e4c15f4de3085bc2bad5c7b0ae472740f8f558e417` |
+| ERC-8004 agent_id | `36` |
+| PIDController (V11, unchanged) | `0x077ce1bdf9671da93542730a7f20825b8edabd2a5dfedaab23a2ac1c47791125` |
+| GrintaHook (V11, unchanged) | `0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147` |
+| SAFEEngine (V11, unchanged) | `0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272` |
+| ParameterGuard V11 (orphaned) | `0x051f52ee6579d2470038e11bb85744bce4f2ebf347478ff925e1c5aa25f616aa` |
 
 ### Pool
 
@@ -94,9 +96,10 @@ See [V11_PROD_CHECKLIST.md](./V11_PROD_CHECKLIST.md) for the demo→prod transit
 | V9 | First end-to-end Sepolia deploy. Verified full liquidation cycle (open → crash → liquidate → auction → settle). Pool ordering: GRIT(token0)/USDC(token1). |
 | V10 | Added ParameterGuard + agent demo infra. Pool ordering flipped to USDC(token0)/GRIT(token1) — opposite of V9. PID gained `set_integral_period_size()`. |
 | V10.1 | Redeployed PID + Guard with wider policy after V10 had Kp clamped to [1.4, 2.6] (too narrow). Other contracts kept. Discovered the prompt-vs-onchain drift problem. |
-| **V11** | **Current.** RAY-scale proportional migration in PIDController. Added `pid.reset_deviation()` and `guard.set_pid_controller()`. Re-pegged redemption price. Now running the conservative policy above. |
+| V11 | RAY-scale proportional migration in PIDController. Added `pid.reset_deviation()` and `guard.set_pid_controller()`. Re-pegged redemption price. Conservative policy applied 2026-04-25. |
+| **V12** | **Current.** ParameterGuard redeployed with ERC-8004 native authorization (registry wallet binding replaces local `agent` storage). Agent NFT 36 minted on the official Sepolia IdentityRegistry, wallet bound via SNIP-6. PID admin transferred V11→V12. Same conservative policy carried over via constructor. |
 
-V9/V10/V10.1 deployment artifacts have been removed from the repo (kept in git history). Only `deployed_v11.json` lives at the root.
+V9/V10/V10.1 deployment artifacts have been removed from the repo (kept in git history). `deployed_v11.json` and `deployed_v12.json` both live at the root — V11 retained as historical reference; V12 is the live target.
 
 ---
 
