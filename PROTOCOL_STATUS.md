@@ -1,177 +1,179 @@
 # Grinta Protocol Status
 
-> Living document tracking what's built, what's next, and what could be added.
-> Last updated: 2026-04-19
+> Living document tracking what's built, what's live, and what's next.
+> Last updated: 2026-04-25
 
 ---
 
 ## What Is Grinta?
 
-A keeper-minimized CDP protocol on Starknet. Users deposit BTC collateral (WBTC, LBTC) and borrow GRIT, a PID-controlled floating stablecoin. The PID rate updater is an Ekubo DEX hook — every swap on the GRIT/USDC pool automatically discovers the market price, runs the PID controller, and updates the redemption rate. No keepers for the internal pipeline.
+A keeper-minimized CDP protocol on Starknet. Users deposit BTC collateral (WBTC, LBTC) and borrow GRIT, a PID-controlled floating stablecoin. The PID rate updater is an Ekubo DEX hook — every swap on the USDC/GRIT pool automatically discovers the market price, runs the PID controller, and updates the redemption rate. No keepers for the internal pipeline.
 
-The only off-chain dependency: someone pushes BTC/USD to the OracleRelayer.
+The only off-chain dependencies:
+- Someone pushes BTC/USD to the OracleRelayer.
+- An LLM (or RL model) proposes Kp/Ki adjustments through the ParameterGuard.
 
-Full mechanism design: [DESIGN.md](./DESIGN.md)
+Full mechanism design: [DESIGN.md](./DESIGN.md). Invariants and failure modes: [INVARIANTS.md](./INVARIANTS.md). Oracle architecture: [ORACLE_DESIGN.md](./ORACLE_DESIGN.md).
 
 ---
 
-## Built — 9 Core Contracts + 2 Mocks
+## Built — 10 Core Contracts + 2 Mocks
 
-All contracts compile clean, **70/70 tests pass**. Deployed on Sepolia V9 with working e2e including full liquidation cycle. **V10 deployed with ParameterGuard + Agent demo infrastructure.**
-
-Contract details and line counts in [README.md](./README.md). Full mechanism design in [DESIGN.md](./DESIGN.md).
+All contracts compile clean, **70/70 tests pass**. V11 deployed and live on Sepolia. The Phase 4 agent loop (LLM → ParameterGuard → PIDController) has run continuously through multiple iterations of policy and prompt tuning.
 
 | Phase | Contracts | Status |
 |---|---|---|
-| Phase 1 — Core | SAFEEngine, CollateralJoin, PIDController, GrintaHook, SafeManager, OracleRelayer | Deployed V9 + V10 |
-| Phase 3 — Liquidation | LiquidationEngine, CollateralAuctionHouse, AccountingEngine | Deployed V9 |
-| Phase 4 — Agent | ParameterGuard | Deployed V10 |
+| Phase 1 — Core | SAFEEngine, CollateralJoin, PIDController, GrintaHook, SafeManager, OracleRelayer | Live (V11) |
+| Phase 3 — Liquidation | LiquidationEngine, CollateralAuctionHouse, AccountingEngine | Live (unchanged since V9) |
+| Phase 4 — Agent | ParameterGuard | Live (V11) |
 
 ### Shared Code
 
-- **types.cairo** (~160 lines): WAD/RAY constants, fixed-point math, core structs
-- **types_ekubo.cairo**: Ekubo-specific types (PoolKey, SwapParameters, Delta, i129, etc.)
-- **interfaces/**: One interface file per contract + external interfaces (iekubo, ierc20)
-- **mock/**: ERC20Mintable, MockEkuboOracle (for testing)
+- `src/types.cairo` — WAD/RAY constants, fixed-point math, core structs
+- `src/types_ekubo.cairo` — Ekubo-specific types (PoolKey, SwapParameters, Delta, i129, etc.)
+- `src/interfaces/` — One per contract + external (iekubo, ierc20)
+- `src/mock/` — ERC20Mintable, MockEkuboOracle (testing)
 
 ---
 
-## Deployed (Sepolia V9)
+## Live Deployment — Sepolia V11
 
-All addresses in [`deployed_v9.json`](./deployed_v9.json).
+All addresses in [`deployed_v11.json`](./deployed_v11.json).
 
-Pool: GRIT(token0)/USDC(token1), fee=0, tick_spacing=1000, extension=GrintaHook
-Init tick: **-27,631,000** (negative — critical, see [INVARIANTS.md](./INVARIANTS.md))
-Liquidity bounds: [-27,726,000, -27,526,000] (~$0.90 to ~$1.10)
+**Headline change vs V10.1:** PIDController and ParameterGuard redeployed for the RAY-scale proportional migration. Everything else (SAFEEngine, GrintaHook, etc.) reused as-is. V11 also bakes:
+- `PID.reset_deviation()` admin function (clears integrator windup)
+- `Guard.set_pid_controller()` admin function (re-point Guard without redeploy)
+- Re-pegged SAFEEngine `redemption_price = 1e27 RAY` ($1 fresh start)
 
-Verified on-chain:
-- Market price: ~$0.9995 (swap-based price discovery works)
-- Full liquidation cycle: open → crash BTC → liquidate → Dutch auction → settle debt
-- Post-settlement accounting: surplus = 3,900 GRIT (13% penalty profit), queued debt = 0
+### Key addresses (V11)
 
----
+| Component | Address |
+|---|---|
+| Agent wallet | `0x01f8975c5a1c6d2764bd30dddf4d6ab80c59e8287e5f796a5ba2490dcbf2dab6` |
+| PIDController | `0x077ce1bdf9671da93542730a7f20825b8edabd2a5dfedaab23a2ac1c47791125` |
+| ParameterGuard | `0x051f52ee6579d2470038e11bb85744bce4f2ebf347478ff925e1c5aa25f616aa` |
+| GrintaHook | `0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147` |
+| SAFEEngine | `0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272` |
 
-## Deployed (Sepolia V10) — Agent-as-Governor Demo
+### Pool
 
-All addresses in [`deployed_v10.json`](./deployed_v10.json).
+USDC(token0) / GRIT(token1), fee=0, tick_spacing=1000, extension=GrintaHook.
+External: Ekubo Core, Router V3, Positions, Oracle (see [README.md](./README.md)).
 
-**Key changes from V9:**
-- Pool token ordering: USDC(token0) < GRIT(token1) — OPPOSITE of V9
-- Added `ParameterGuard` contract for bounded AI agent parameter governance
-- Added `set_integral_period_size()` setter to PIDController (was hardcoded 3600s)
-- Redeployed PIDController with `integral_period_size=5s` for fast demo cycles
-- **PID address**: `0x069bd5d8cda116f142f9fb56fdd55310bce06274e0c5461166ce32c27ac91e0f`
+### Live ParameterGuard policy (conservative — applied 2026-04-25)
 
-**Demo infrastructure** (`demo/`, `agent/`):
-- **Feeder** (`demo/src/feeder.ts`): pushes CSV BTC prices to OracleRelayer
-- **Trader** (`demo/src/trader.ts`): executes Ekubo swaps creating depeg pressure per phase
-- **Agent** (`agent/`): LLM (GLM-5.1 via CommonStack) monitors state → reasons → proposes KP/KI via ParameterGuard
-- **Launcher** (`demo/src/launcher.ts`): orchestrates all three as child processes
+Migrated from the wide demo policy to a calibrated production-shape policy via the
+3-tx loosen→propose→retighten pattern (see [`app/scripts/apply-conservative-policy.ts`](./app/scripts/apply-conservative-policy.ts)).
 
-**Verified working:**
-- ✅ Feeder pushes prices correctly (7/7 in 60s demo)
-- ✅ Trader swaps execute (2 swaps in 60s)
-- ✅ Agent reads all on-chain state (8 contract calls)
-- ✅ Agent called LLM and submitted `propose_parameters` tx (updateCount=1)
-- ⚠️ Nonce collision between trader & agent (same wallet) — mitigated with retry logic in executor
-
----
-
-## Deployed (Sepolia V10.1) — Post-V10 Redeploy of PID + Guard
-
-All addresses in [`deployed_v10_1.json`](./deployed_v10_1.json).
-
-**Why a V10.1 exists:** after the initial V10 deploy, the `PIDController` and `ParameterGuard` were redeployed to widen the Guard's policy for demo purposes (V10 had KP bounded to [1.4, 2.6], too narrow for meaningful LLM movement). All other V10 contracts were reused as-is — the new PID and Guard were wired into the existing V10 infrastructure.
-
-**What changed vs V10:**
-
-| Component | V10 address | V10.1 address |
+| Field | Value | Rationale |
 |---|---|---|
-| PIDController | `0x069bd5d8...` | `0x053916399...` |
-| ParameterGuard | `0x00341ecbc...` | `0x065e1098a...` |
-| Agent wallet | `0x27c0daed...` | `0x01f8975c5...` |
+| `kp` baseline | 6.667e-7 WAD | ~20% annualized rate at 1% deviation |
+| `ki` baseline | 6.667e-13 WAD | symmetric with Kp shape |
+| `kp_min` / `kp_max` | [3.333e-7, 1e-6] WAD | ±50% headroom around baseline |
+| `ki_min` / `ki_max` | [3.333e-13, 1e-12] WAD | ±50% headroom around baseline |
+| `max_kp_delta` | 6.667e-8 WAD | 10% of baseline per call (no doubling) |
+| `max_ki_delta` | 6.667e-14 WAD | 10% of baseline per call |
+| `cooldown_seconds` | 5 | demo cadence |
+| `emergency_cooldown_seconds` | 3 | demo cadence |
+| `max_updates` | 1000 | demo cadence |
 
-**What stayed:** SAFEEngine, CollateralJoin, GrintaHook, SafeManager, OracleRelayer, AccountingEngine, LiquidationEngine, CollateralAuctionHouse, MockWBTC, MockUSDC — all V10 addresses unchanged.
+The conservative policy reflects the design philosophy: **the agent nudges at specific market moments**, never makes panic jumps. Doubling Kp in one tx is forbidden by construction.
 
-**Guard policy (on-chain verified 2026-04-19):**
-- KP range: [0.1, 10.0] WAD (was [1.4, 2.6])
-- KI range: [0.0, 0.1] WAD (was [0.001, 0.01])
-- Max KP delta per update: 2.0 WAD (was 0.5)
-- Max KI delta per update: 0.2 WAD (was 0.002)
-- Cooldown: 5s normal, 3s emergency (was 300/60)
-- Max updates: 1000 (was 20)
+Migration txs (Sepolia): loose `0x141ae4e9...`, propose `0x3242bdbc...`, tight `0x4da1724c...`.
 
-**On-chain verification (2026-04-19):**
-- `Guard.get_agent()` → matches `.env AGENT_ADDRESS` ✓
-- `Guard.get_update_count()` → 28 (agent has successfully proposed 28 times)
-- `PID.get_controller_gains()` → kp=10.0, ki=0.1 WAD (at Guard ceiling)
+### Production targets
 
-**Known issue:** the agent's LLM prompt (in `app/server/index.ts`) states constraints that don't match on-chain reality — it claims `cooldown=30s, emergency=10s, max_kp_delta=1.0`, but on-chain values are `5s, 3s, 2.0`. Prompt needs a second pass to align with actual Guard policy. Also, the LLM was monotonically increasing KP (now at ceiling 10.0) because the old prompt didn't instruct to decrease on BTC pumps. The prompt has been simplified to handle both directions symmetrically.
+See [V11_PROD_CHECKLIST.md](./V11_PROD_CHECKLIST.md) for the demo→prod transition (longer cooldowns, smaller bounds, real noise barrier, hour-scale integral period, etc.).
+
+---
+
+## Deployment History
+
+| Version | Highlight |
+|---|---|
+| V9 | First end-to-end Sepolia deploy. Verified full liquidation cycle (open → crash → liquidate → auction → settle). Pool ordering: GRIT(token0)/USDC(token1). |
+| V10 | Added ParameterGuard + agent demo infra. Pool ordering flipped to USDC(token0)/GRIT(token1) — opposite of V9. PID gained `set_integral_period_size()`. |
+| V10.1 | Redeployed PID + Guard with wider policy after V10 had Kp clamped to [1.4, 2.6] (too narrow). Other contracts kept. Discovered the prompt-vs-onchain drift problem. |
+| **V11** | **Current.** RAY-scale proportional migration in PIDController. Added `pid.reset_deviation()` and `guard.set_pid_controller()`. Re-pegged redemption price. Now running the conservative policy above. |
+
+V9/V10/V10.1 deployment artifacts have been removed from the repo (kept in git history). Only `deployed_v11.json` lives at the root.
 
 ---
 
 ## Frontend & Tooling
 
-- **React app** (`app/`): Wallet connect (starknet-react), SafeActions UI, hooks for contract interaction
+- **React app** (`app/`): wallet connect (starknet-react), SafeActions UI, ParameterGuard dashboard, on-chain history charts (`/api/history`), Filecoin archiving for decision logs.
+- **Agent server** (`app/server/`): Express endpoint that runs the LLM reasoning loop on demand. Hosted on Render, auto-deploys from `main`.
+- **Standalone agent** (`agent/`): identical reasoning loop as a long-running process (alternative to the server). See [agent/README.md](./agent/README.md).
 - **MCP Server** (`agents/mcp-server/`): 16 tools for AI agent interaction — read positions, borrow, repay, deposit, withdraw, check health, etc.
 
 ---
 
-## Next: Revenue & Governance
+## Operational Patterns (lessons from running V11)
 
-With swap-based price discovery resolved (V9), the next priorities are:
+These are patterns the codebase actually uses today. Worth knowing before touching the agent loop.
+
+### ParameterGuard reset trick (loosen → propose → retighten)
+
+When gains have walked far from baseline and the per-call `max_kp_delta` would force many sequential proposals, a 3-tx admin sequence resets in one cooldown window:
+
+1. Deployer `set_policy(LOOSE)` — widen deltas to full range.
+2. Agent `propose_parameters(target)` — single jump to baseline.
+3. Deployer `set_policy(TIGHT)` — re-tighten to production deltas.
+
+Reference: [`app/scripts/apply-conservative-policy.ts`](./app/scripts/apply-conservative-policy.ts) and [`app/scripts/reset-pid-gains.ts`](./app/scripts/reset-pid-gains.ts).
+**Always stop the live agent first** — if it fires between steps 1 and 2 it consumes the cooldown under the loose policy.
+
+### Server-side LLM clamping (defense in depth)
+
+The on-chain Guard rejects out-of-bounds proposals with `Result::unwrap failed`, which surfaces to users as opaque RPC errors. To avoid this, the server clamps LLM outputs against the live policy *in code* before signing:
+
+```ts
+const kpClamped = clampBounds(
+  clampDelta(newKp, currentKp, POLICY.MAX_KP_DELTA),
+  POLICY.KP_MIN,
+  POLICY.KP_MAX,
+);
+```
+
+Triggered after a real incident: GLM-5.1 returned `7.334e-13` (extra precision), the rounded raw value was 733_400, delta from 666_667 was 66_733, busting the 66_667 cap by 66 wei. The clamp mirrors the on-chain policy in `app/server/index.ts`. **Update both whenever the policy moves on-chain.**
+
+### LLM JSON output reliability (GLM-5.1 specific)
+
+Reasoning models burn `max_tokens` on internal reasoning before emitting any output. Two non-negotiables for GLM-5.1:
+
+1. `response_format: { type: "json_object" }` — forces JSON-only output, no prose preamble.
+2. `max_tokens >= 8000` — anything below 4000 gets truncated mid-reasoning, returning empty string.
+
+Diagnostic logs include `finish_reason` and content length so future failures are debuggable from the dashboard.
+
+### Strict prompt ↔ on-chain alignment
+
+The agent prompt MUST mirror the live ParameterGuard policy (bounds, deltas, cooldowns) exactly. Drift causes the LLM to propose values the chain rejects. Both `agent/src/reasoning.ts` and `app/server/index.ts` share the same prompt structure — update both when policy changes.
+
+---
+
+## Roadmap
 
 ### 10. TaxCollector (PLANNED)
 
-Stability fees — interest charged on outstanding debt.
-
-- Per-collateral fee rates (e.g. 2% APY on WBTC debt)
-- Accrues continuously, collected on any safe operation
-- Revenue goes to AccountingEngine as surplus
-- Separate from PID redemption rate (which adjusts peg, not revenue)
-
-**Why later**: The PID already adjusts borrowing cost via redemption rate. Stability fees are an additional revenue layer for protocol sustainability.
-
----
-
-## Later: Last-Resort Mechanisms
-
-These handle edge cases where collateral auctions don't fully cover bad debt.
+Stability fees — interest charged on outstanding debt. Per-collateral rates, accrued continuously, surplus to AccountingEngine. Separate from PID redemption rate (which adjusts peg, not revenue).
 
 ### 11. DebtAuctionHouse (PLANNED)
 
-Mints governance token to cover uncovered bad debt.
-
-- Triggered when AccountingEngine has persistent deficit
-- Mints protocol governance tokens, sells for GRIT
-- Requires: governance token contract (not yet built)
+Mints governance token to cover uncovered bad debt. Triggered when AccountingEngine has persistent deficit. Requires governance token contract.
 
 ### 12. SurplusAuctionHouse (PLANNED)
 
-Burns governance token using excess surplus from stability fees.
-
-- Triggered when AccountingEngine surplus exceeds buffer
-- Sells GRIT surplus for governance tokens, burns the gov tokens
-- Requires: governance token + TaxCollector (no surplus without fees)
-
----
-
-## Before Mainnet: Safety & Governance
+Burns governance token using excess surplus from stability fees. Requires governance token + TaxCollector.
 
 ### 13. GlobalSettlement (PLANNED)
 
-Emergency shutdown — freezes the protocol and allows orderly unwinding.
-
-- Admin (later: governance) can trigger shutdown
-- Freezes all oracles and rates
-- Allows users to redeem GRIT at a fixed rate for their share of collateral
+Emergency shutdown — freezes the protocol, allows orderly redemption of GRIT for collateral share.
 
 ### 14. Governor + Delegatee (PLANNED)
 
-On-chain governance for parameter changes and emergency actions.
-
-- OpenZeppelin Governor pattern adapted for Cairo
-- Replaces admin role for mainnet
+On-chain governance for parameter changes and emergency actions. OpenZeppelin Governor pattern adapted for Cairo.
 
 ---
 
@@ -198,11 +200,14 @@ On-chain governance for parameter changes and emergency actions.
 | Collateral | BTC-denominated (WBTC primary) | Starknet has $130M+ bridged BTC, yield thesis with LBTC |
 | Price discovery | Swap delta amounts | Real market data from every trade, not TWAP oracle |
 | Math precision | WAD (18) + RAY (27) | RAY critical for per-second rate compounding |
+| Agent governance | Bounded propose-only via Guard | DAO votes policy, AI proposes within bounds — see [GRINTA_AGENTIC_HACKATHON.md](./GRINTA_AGENTIC_HACKATHON.md) |
+| Conservative policy | 10% delta caps, ±50% bounds | Agent nudges, doesn't panic-jump. ~20% annualized at 1% deviation |
 
 ---
 
 ## Reference Material
 
-- `hai_core/` — HAI Solidity contracts + docs (liquidation engine, accounting engine, auctions)
-- `opus_contracts/` — Opus Cairo CDP (purger = liquidation, absorber = stability pool, shrine = engine)
+- HAI Solidity contracts + docs (liquidation engine, accounting engine, auctions): https://github.com/hai-on-op/core
+- Opus Cairo CDP (purger = liquidation, absorber = stability pool, shrine = engine): https://github.com/lindy-labs/opus_contracts
 - [DESIGN.md](./DESIGN.md) — Full mechanism design with math
+- [GRINTA_AGENTIC_HACKATHON.md](./GRINTA_AGENTIC_HACKATHON.md) — Agent-as-Governor thesis and roadmap

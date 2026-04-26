@@ -132,20 +132,20 @@ The agent intervention happens at the same timestamp as the market shock, creati
 
 Total: ~2,540 lines. Full mechanism design and parameters in [DESIGN.md](./DESIGN.md).
 
-## Sepolia Deployment (V9 — Current)
+## Sepolia Deployment (V11 — Current)
 
-All V9 addresses are in [`deployed_v9.json`](./deployed_v9.json).
+All V11 addresses are in [`deployed_v11.json`](./deployed_v11.json). Deployment history (V9 → V11) and live ParameterGuard policy in [PROTOCOL_STATUS.md](./PROTOCOL_STATUS.md).
 
-Pool: GRIT(token0)/USDC(token1), fee=0, tick_spacing=1000, extension=GrintaHook
-Init tick: **-27,631,000** (negative — see [INVARIANTS.md](./INVARIANTS.md) for why)
-Liquidity bounds: [-27,726,000, -27,526,000] (~$0.90 to ~$1.10)
+Pool: USDC(token0)/GRIT(token1), fee=0, tick_spacing=1000, extension=GrintaHook
+Init tick is computed dynamically based on token address ordering — see [INVARIANTS.md](./INVARIANTS.md) for the tick math (Ekubo uses base 1.000001, not Uniswap's 1.0001) and the sign rule (NEGATIVE when token0 has more decimals than token1).
 
-Verified on-chain: market price ~$0.9995, full liquidation cycle (open → crash → liquidate → auction → settle).
+Live policy (2026-04-25, conservative): Kp ∈ [3.33e-7, 1e-6] WAD around baseline 6.67e-7 (~20% annualized at 1% deviation), 10% per-call delta caps. The agent nudges; it does not panic-jump.
 
 External dependencies (Sepolia):
 - Ekubo Core: `0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384`
 - Ekubo Router V3: `0x0045f933adf0607292468ad1c1dedaa74d5ad166392590e72676a34d01d7b763`
 - Ekubo Positions: `0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5`
+- Ekubo Oracle: `0x003ccf3ee24638dd5f1a51ceb783e120695f53893f6fd947cc2dcabb3f86dc65`
 
 ## Building
 
@@ -157,9 +157,11 @@ snforge test         # Run tests (70/70 passing)
 ## Deploying
 
 ```bash
-chmod +x deploy_sepolia.sh
-./deploy_sepolia.sh  # Declares, deploys, wires permissions, registers hook, creates pool
+chmod +x scripts/deploy_sepolia_v11.sh
+./scripts/deploy_sepolia_v11.sh  # Declares, deploys, wires permissions, registers hook, creates pool
 ```
+
+For demo→prod parameter migration, see [V11_PROD_CHECKLIST.md](./V11_PROD_CHECKLIST.md). For policy resets without redeploy, see [`app/scripts/apply-conservative-policy.ts`](./app/scripts/apply-conservative-policy.ts) (loosen → propose → retighten pattern).
 
 ## Documentation
 

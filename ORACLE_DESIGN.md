@@ -467,8 +467,8 @@ Use **Pragma as the primary oracle** for collateral valuation, with **Ekubo as a
 
 - **Ekubo Oracle Extension**: `ekubo-contracts/src/extensions/oracle.cairo`
 - **Ekubo Snapshot Type**: `ekubo-contracts/src/types/snapshot.cairo`
-- **Opus Ekubo Oracle Adapter**: `opus_contracts/src/external/ekubo.cairo`
-- **Opus Pragma Oracle**: `opus_contracts/src/external/pragma.cairo`
+- **Opus Ekubo Oracle Adapter**: [opus_contracts/src/external/ekubo.cairo](https://github.com/lindy-labs/opus_contracts/blob/main/src/external/ekubo.cairo)
+- **Opus Pragma Oracle**: [opus_contracts/src/external/pragma.cairo](https://github.com/lindy-labs/opus_contracts/blob/main/src/external/pragma.cairo)
 - **Current Mock**: `src/oracle_relayer.cairo`
 - **GrintaHook Integration**: `src/grinta_hook.cairo` (lines 144-169)
 - **Price Feeds**: See "The Two Prices" section at the top of this document

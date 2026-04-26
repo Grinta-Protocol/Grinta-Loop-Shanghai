@@ -41,14 +41,14 @@ npm run start
 
 ```bash
 # Agent wallet (MUST match the address registered on ParameterGuard)
-AGENT_ADDRESS=0x1f8975c5a1c6d2764bd30dddf4d6ab80c59e8287e5f796a5ba2490dcbf2dab6
+AGENT_ADDRESS=0x01f8975c5a1c6d2764bd30dddf4d6ab80c59e8287e5f796a5ba2490dcbf2dab6
 AGENT_PRIVATE_KEY=0x...
 
-# Contract addresses
-PARAMETER_GUARD_ADDRESS=0x65e1098a1552e8aceec3a5217ecad40d223303e00070097abcc011deeb1ce1b
-PID_CONTROLLER_ADDRESS=0x53916399f6c8caf0e1ded219f7d956b9bde8c0d070f17435d3179492b738dd3
-GRINTA_HOOK_ADDRESS=0x029d4fa992b69377bdc8fb9f98dd4fb255b7c82e62727be4d5badcd7da60122b
-SAFE_ENGINE_ADDRESS=0x012acdb5b9fd6743372f6e14e8af51dae1cd54bbcc578682656f4c75628d8c0c
+# Contract addresses (V11 — see deployed_v11.json at repo root)
+PARAMETER_GUARD_ADDRESS=0x051f52ee6579d2470038e11bb85744bce4f2ebf347478ff925e1c5aa25f616aa
+PID_CONTROLLER_ADDRESS=0x077ce1bdf9671da93542730a7f20825b8edabd2a5dfedaab23a2ac1c47791125
+GRINTA_HOOK_ADDRESS=0x04560e84979e5bae575c65f9b0be443d91d9333a8f2f50884ebd5aaf89fb6147
+SAFE_ENGINE_ADDRESS=0x07417b07b7ac71dd816c8d880f4dc1f74c10911aa174305a9146e1b56ef60272
 
 # LLM provider (OpenAI-compatible)
 COMMONSTACK_API_KEY=your_key
@@ -56,7 +56,7 @@ COMMONSTACK_BASE_URL=https://api.commonstack.ai/v1
 LLM_MODEL=zai-org/glm-5.1
 
 # RPC
-STARKNET_RPC_URL=https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/w0WsoxSXn4Xq8DEGYETDW
+STARKNET_RPC_URL=https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/<your_key>
 ```
 
 ## Components
@@ -124,18 +124,31 @@ The LLM receives full PID context and current state, then decides:
 
 ## On-Chain Guardrails (ParameterGuard)
 
-The agent does NOT have direct PID admin access. All proposals go through ParameterGuard which enforces:
+The agent does NOT have direct PID admin access. All proposals go through ParameterGuard which enforces (live policy as of 2026-04-25):
 
-- **Absolute bounds**: KP must be in `[0.1, 10.0]` WAD, KI in `[0, 0.1]` WAD
-- **Per-call delta caps**: max KP change of 1.0 WAD and KI change of 0.1 WAD per call
-- **Cooldown**: 30s normal, 10s emergency (when deviation exceeds threshold)
-- **Budget**: max 20 updates total before requiring admin reset
-- **Emergency stop**: human admin can halt agent at any time
+- **Absolute bounds**: KP must be in `[3.33e-7, 1e-6]` WAD around baseline `6.67e-7` (~20% annualized at 1% deviation); KI in `[3.33e-13, 1e-12]` WAD around baseline `6.67e-13`.
+- **Per-call delta caps**: max KP change of `6.67e-8` WAD (10% of baseline) and KI change of `6.67e-14` WAD (10% of baseline) per call. Doubling is forbidden by construction.
+- **Cooldown**: 5s normal, 3s emergency (demo cadence; prod targets in [V11_PROD_CHECKLIST.md](../V11_PROD_CHECKLIST.md)).
+- **Budget**: 1000 updates total (demo); prod target 50.
+- **Emergency stop**: human admin can halt agent at any time.
 
-## Known Issues
+If the policy changes on-chain, both the server prompt (`app/server/index.ts`) and the standalone agent prompt (`src/reasoning.ts`) MUST be updated to mirror the new bounds — drift causes the LLM to propose values the chain rejects with `Result::unwrap failed`.
 
-1. **i128 encoding** — `executor.ts:encodeI128()` uses `value + 2^128` for negative values. This is WRONG for Starknet felt252 encoding. Should use `STARK_PRIME + value` where `STARK_PRIME = 2^251 + 17*2^192 + 1`. Currently only positive KP/KI values are proposed so this hasn't triggered.
+## LLM Reliability
 
-2. **Tip estimation** — Alchemy RPC sometimes fails `getTipStats`. Fix: add `{ maxFee: 10n ** 16n }` to `account.execute()` in `executor.ts`.
+Two patterns are mandatory when running GLM-5.1 (or any reasoning model that consumes `max_tokens` on internal thoughts):
 
-3. **LLM connection** — CommonStack API may return connection errors. Verify API key is valid. Alternative: point to any OpenAI-compatible endpoint.
+1. **JSON mode** — pass `response_format: { type: "json_object" }` to the LLM call. Without it, the model may emit prose preamble and the JSON parser fails.
+2. **`max_tokens >= 8000`** — reasoning models burn tokens before output. Below 4000, output is truncated to empty string.
+
+Independently, the server applies **defensive clamping** in code before signing the tx:
+
+```ts
+const kpClamped = clampBounds(
+  clampDelta(newKp, currentKp, POLICY.MAX_KP_DELTA),
+  POLICY.KP_MIN,
+  POLICY.KP_MAX,
+);
+```
+
+This catches LLM rounding errors that bust the on-chain delta cap by a few wei (e.g. model returns `7.334e-13` → 733_400 raw; cap is 66_667; clamp brings it to a valid value). Mirror the on-chain policy in the `POLICY` object whenever it moves.
