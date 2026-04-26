@@ -1,0 +1,41 @@
+{
+  "version": "V12",
+  "network": "sepolia",
+  "parent": "V11",
+  "deployed_at": "2026-04-26T18:33:53.918Z",
+  "notes": "ERC-8004 native auth — replaces V11 Guard's _assert_agent with IdentityRegistry wallet binding.",
+  "deployer": "0x072F0D2391F7ce9103D31a64b6A36e0Fe8d32f908D2e183A02d9D46403b21ce2",
+  "contracts": {
+    "ParameterGuard_V12": "0x7acc10ba0a293c62b3a3bba5c885beac8120a12b33b7f31bdd99a5b9dd92278",
+    "ParameterGuard_V11_orphaned": "0x051f52ee6579d2470038e11bb85744bce4f2ebf347478ff925e1c5aa25f616aa",
+    "PIDController": "0x077ce1bdf9671da93542730a7f20825b8edabd2a5dfedaab23a2ac1c47791125",
+    "IdentityRegistry": "0x7856876f4c8e1880bc0a2e4c15f4de3085bc2bad5c7b0ae472740f8f558e417"
+  },
+  "class_hashes": {
+    "ParameterGuard_V12": "0x6fb29bbdc704c53f6adf18d3254d823463e732815dde0108eec896f376b1a2e"
+  },
+  "erc8004": {
+    "agent_id": "0x24",
+    "registry": "0x7856876f4c8e1880bc0a2e4c15f4de3085bc2bad5c7b0ae472740f8f558e417"
+  },
+  "constructor_policy": {
+    "kp_range_wad": [
+      "3.333e-7",
+      "1e-6"
+    ],
+    "ki_range_wad": [
+      "3.333e-13",
+      "1e-12"
+    ],
+    "max_kp_delta_wad": "6.667e-8",
+    "max_ki_delta_wad": "6.667e-14",
+    "cooldown_seconds": 5,
+    "emergency_cooldown_seconds": 3,
+    "max_updates": 1000
+  },
+  "txs": {
+    "declare": "0x6fb29bbdc704c53f6adf18d3254d823463e732815dde0108eec896f376b1a2e",
+    "deploy": "0x5b2a3b792594db55a2909d5067f1f9df8f4b36695ec48c5ffb3048879853310",
+    "transferPidAdmin": "0x2d0f31b006a452a5190ddc2d7e00c416526ebda91f0c8525e8eae20e936a533"
+  }
+}

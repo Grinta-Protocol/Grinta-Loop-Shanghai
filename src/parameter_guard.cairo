@@ -1,13 +1,19 @@
 /// ParameterGuard — Bounded parameter governance for PIDController
-/// Allows an LLM agent to modify Kp/Ki within safe bounds defined by a human admin.
-/// Inspired by starknet-agentic SessionPolicy/SpendingPolicy enforcement patterns.
+/// Allows an ERC-8004 registered agent to modify Kp/Ki within safe bounds
+/// defined by a human admin.
 ///
-/// Enforcement layers (mirroring starknet-agentic's 3-layer model):
-///   1. Identity: caller must be the registered agent
+/// Identity model: the proposer's wallet must be the SNIP-6 bound wallet of
+/// a live NFT in the configured ERC-8004 IdentityRegistry. The registry is
+/// the single source of truth for "who is the agent" — there is no local
+/// agent storage. To rotate the agent, admin updates `proposer_agent_id`
+/// (or rotates the NFT's wallet binding via the registry directly).
+///
+/// Enforcement layers:
+///   1. Identity: ERC-8004 wallet-binding check (`get_agent_wallet == caller`)
 ///   2. Bounds: new values within absolute min/max AND per-call delta cap
 ///   3. Rate limit: cooldown + call budget
 ///
-/// PDR (Policy Decision Record) events emitted for every action (paper #5 pattern).
+/// PDR (Policy Decision Record) events emitted for every action.
 #[starknet::contract]
 pub mod ParameterGuard {
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
@@ -15,12 +21,15 @@ pub mod ParameterGuard {
     use core::num::traits::Zero;
     use grinta::types::AgentPolicy;
     use grinta::interfaces::ipid_controller::{IPIDControllerDispatcher, IPIDControllerDispatcherTrait};
+    use grinta::interfaces::iidentity_registry::{IIdentityRegistryDispatcher, IIdentityRegistryDispatcherTrait};
 
     #[storage]
     struct Storage {
         admin: ContractAddress,
-        agent: ContractAddress,
         pid_controller: ContractAddress,
+        // ERC-8004 identity — mandatory, set in constructor, rotatable by admin
+        identity_registry: ContractAddress,
+        proposer_agent_id: u256,
         // Policy bounds
         policy_kp_min: i128,
         policy_kp_max: i128,
@@ -47,9 +56,9 @@ pub mod ParameterGuard {
         ParameterUpdate: ParameterUpdate,
         EmergencyStop: EmergencyStop,
         Resumed: Resumed,
-        AgentSet: AgentSet,
-        AgentRevoked: AgentRevoked,
         PolicyUpdated: PolicyUpdated,
+        ProposalAttributed: ProposalAttributed,
+        IdentityConfigured: IdentityConfigured,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -80,25 +89,36 @@ pub mod ParameterGuard {
     }
 
     #[derive(Drop, starknet::Event)]
-    pub struct AgentSet {
-        #[key]
-        pub admin: ContractAddress,
-        pub agent: ContractAddress,
-        pub timestamp: u64,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    pub struct AgentRevoked {
-        #[key]
-        pub admin: ContractAddress,
-        pub old_agent: ContractAddress,
-        pub timestamp: u64,
-    }
-
-    #[derive(Drop, starknet::Event)]
     pub struct PolicyUpdated {
         #[key]
         pub admin: ContractAddress,
+        pub timestamp: u64,
+    }
+
+    /// Emitted on every successful proposal, binding the action to its
+    /// on-chain ERC-8004 identity. Indexers (The Graph, Voyager) key on
+    /// agent_id to build per-agent feeds.
+    #[derive(Drop, starknet::Event)]
+    pub struct ProposalAttributed {
+        #[key]
+        pub agent_id: u256,
+        #[key]
+        pub caller: ContractAddress,
+        pub new_kp: i128,
+        pub new_ki: i128,
+        pub is_emergency: bool,
+        pub timestamp: u64,
+    }
+
+    /// Emitted when admin rotates either the registry pointer or the
+    /// proposer agent_id. Snapshots both fields so a single stream
+    /// captures every config transition.
+    #[derive(Drop, starknet::Event)]
+    pub struct IdentityConfigured {
+        #[key]
+        pub admin: ContractAddress,
+        pub identity_registry: ContractAddress,
+        pub proposer_agent_id: u256,
         pub timestamp: u64,
     }
 
@@ -110,16 +130,20 @@ pub mod ParameterGuard {
     fn constructor(
         ref self: ContractState,
         admin: ContractAddress,
-        agent: ContractAddress,
         pid_controller: ContractAddress,
+        identity_registry: ContractAddress,
+        proposer_agent_id: u256,
         policy: AgentPolicy,
     ) {
         assert(!admin.is_zero(), 'GUARD: admin is zero');
         assert(!pid_controller.is_zero(), 'GUARD: pid is zero');
+        assert(!identity_registry.is_zero(), 'GUARD: registry is zero');
+        assert(proposer_agent_id != 0, 'GUARD: agent_id is zero');
 
         self.admin.write(admin);
-        self.agent.write(agent);
         self.pid_controller.write(pid_controller);
+        self.identity_registry.write(identity_registry);
+        self.proposer_agent_id.write(proposer_agent_id);
         self._write_policy(policy);
         self.stopped.write(false);
         self.update_count.write(0);
@@ -136,10 +160,17 @@ pub mod ParameterGuard {
             assert(get_caller_address() == self.admin.read(), 'GUARD: not admin');
         }
 
+        /// Authorize the caller via ERC-8004 wallet binding. The registry
+        /// returns the SNIP-6 bound wallet for the configured agent_id;
+        /// caller must match. Zero-wallet (no binding set, or NFT
+        /// transferred without re-binding) is rejected.
         fn _assert_agent(self: @ContractState) {
-            let agent = self.agent.read();
-            assert(!agent.is_zero(), 'GUARD: no agent set');
-            assert(get_caller_address() == agent, 'GUARD: not agent');
+            let registry = IIdentityRegistryDispatcher {
+                contract_address: self.identity_registry.read(),
+            };
+            let bound = registry.get_agent_wallet(self.proposer_agent_id.read());
+            assert(!bound.is_zero(), 'GUARD: NFT not bound');
+            assert(bound == get_caller_address(), 'GUARD: not bound wallet');
         }
 
         fn _pid(self: @ContractState) -> IPIDControllerDispatcher {
@@ -190,6 +221,15 @@ pub mod ParameterGuard {
                 diff.try_into().unwrap()
             }
         }
+
+        fn _emit_identity_configured(ref self: ContractState) {
+            self.emit(IdentityConfigured {
+                admin: get_caller_address(),
+                identity_registry: self.identity_registry.read(),
+                proposer_agent_id: self.proposer_agent_id.read(),
+                timestamp: get_block_timestamp(),
+            });
+        }
     }
 
     // ========================================================================
@@ -198,7 +238,7 @@ pub mod ParameterGuard {
 
     #[external(v0)]
     fn propose_parameters(ref self: ContractState, new_kp: i128, new_ki: i128, is_emergency: bool) {
-        // Layer 1: Identity
+        // Layer 1: Identity — ERC-8004 wallet binding
         self._assert_agent();
         assert(!self.stopped.read(), 'GUARD: stopped');
 
@@ -269,9 +309,12 @@ pub mod ParameterGuard {
             ki_calldata.span(),
         ).unwrap();
 
-        // Emit PDR event
+        // Emit PDR events — both legacy ParameterUpdate (kept for indexer
+        // compat) and ERC-8004 ProposalAttributed (always, since identity
+        // is mandatory now)
+        let caller = get_caller_address();
         self.emit(ParameterUpdate {
-            agent: get_caller_address(),
+            agent: caller,
             old_kp,
             new_kp,
             old_ki,
@@ -280,36 +323,51 @@ pub mod ParameterGuard {
             emergency_mode,
             timestamp: now,
         });
+
+        self.emit(ProposalAttributed {
+            agent_id: self.proposer_agent_id.read(),
+            caller,
+            new_kp,
+            new_ki,
+            is_emergency: emergency_mode,
+            timestamp: now,
+        });
     }
 
     // ========================================================================
     // Admin functions
     // ========================================================================
 
-    #[external(v0)]
-    fn set_agent(ref self: ContractState, agent: ContractAddress) {
-        self._assert_admin();
-        self.agent.write(agent);
-        self.emit(AgentSet {
-            admin: get_caller_address(),
-            agent,
-            timestamp: get_block_timestamp(),
-        });
-    }
-
     /// Redirect the Guard's PID reference to a new PIDController contract.
-    ///
-    /// Why: when we redeploy the PIDController (e.g. V11 RAY migration), the
-    /// Guard must be repointed to the new address so its proxy_* admin calls
-    /// and propose_parameters route to the correct contract. Without this
-    /// setter the Guard would be stuck pointing at the old (corrupt) PID and
-    /// we'd have to redeploy the Guard itself — losing the update_count,
-    /// stopped flag, and any accumulated state. Admin-only.
+    /// Useful when redeploying PID (e.g. RAY migration) without losing
+    /// Guard state (update_count, stopped, etc.). Admin-only.
     #[external(v0)]
     fn set_pid_controller(ref self: ContractState, controller: ContractAddress) {
         self._assert_admin();
         assert(!controller.is_zero(), 'GUARD: pid is zero');
         self.pid_controller.write(controller);
+    }
+
+    /// Repoint the registry. Mostly useful if the official IdentityRegistry
+    /// gets upgraded to a new address (rare, but the keep-starknet-strange
+    /// repo upgrades via replace_class so address shouldn't change). Admin-only.
+    #[external(v0)]
+    fn set_identity_registry(ref self: ContractState, registry: ContractAddress) {
+        self._assert_admin();
+        assert(!registry.is_zero(), 'GUARD: registry is zero');
+        self.identity_registry.write(registry);
+        self._emit_identity_configured();
+    }
+
+    /// Rotate the active proposer to a different ERC-8004 NFT. The new
+    /// agent_id must already be minted; subsequent propose_parameters
+    /// calls will route to whichever wallet that NFT is bound to.
+    #[external(v0)]
+    fn set_proposer_agent_id(ref self: ContractState, agent_id: u256) {
+        self._assert_admin();
+        assert(agent_id != 0, 'GUARD: agent_id is zero');
+        self.proposer_agent_id.write(agent_id);
+        self._emit_identity_configured();
     }
 
     #[external(v0)]
@@ -338,18 +396,6 @@ pub mod ParameterGuard {
         self.stopped.write(false);
         self.emit(Resumed {
             admin: get_caller_address(),
-            timestamp: get_block_timestamp(),
-        });
-    }
-
-    #[external(v0)]
-    fn revoke_agent(ref self: ContractState) {
-        self._assert_admin();
-        let old_agent = self.agent.read();
-        self.agent.write(Zero::zero());
-        self.emit(AgentRevoked {
-            admin: get_caller_address(),
-            old_agent,
             timestamp: get_block_timestamp(),
         });
     }
@@ -422,11 +468,6 @@ pub mod ParameterGuard {
     }
 
     #[external(v0)]
-    fn get_agent(self: @ContractState) -> ContractAddress {
-        self.agent.read()
-    }
-
-    #[external(v0)]
     fn is_stopped(self: @ContractState) -> bool {
         self.stopped.read()
     }
@@ -439,5 +480,26 @@ pub mod ParameterGuard {
     #[external(v0)]
     fn get_last_update_timestamp(self: @ContractState) -> u64 {
         self.last_update_timestamp.read()
+    }
+
+    #[external(v0)]
+    fn get_identity_registry(self: @ContractState) -> ContractAddress {
+        self.identity_registry.read()
+    }
+
+    #[external(v0)]
+    fn get_proposer_agent_id(self: @ContractState) -> u256 {
+        self.proposer_agent_id.read()
+    }
+
+    /// Convenience view: the wallet currently authorized to propose.
+    /// Reads from the registry, so it reflects the live SNIP-6 binding.
+    /// Returns zero if NFT is not bound (or transferred without re-binding).
+    #[external(v0)]
+    fn get_authorized_wallet(self: @ContractState) -> ContractAddress {
+        let registry = IIdentityRegistryDispatcher {
+            contract_address: self.identity_registry.read(),
+        };
+        registry.get_agent_wallet(self.proposer_agent_id.read())
     }
 }

@@ -1,0 +1,24 @@
+{
+  "agentId": "0x24",
+  "agentIdDecimal": "36",
+  "identityRegistry": "0x7856876f4c8e1880bc0a2e4c15f4de3085bc2bad5c7b0ae472740f8f558e417",
+  "owner": "0x072F0D2391F7ce9103D31a64b6A36e0Fe8d32f908D2e183A02d9D46403b21ce2",
+  "boundWallet": "0x1f8975c5a1c6d2764bd30dddf4d6ab80c59e8287e5f796a5ba2490dcbf2dab6",
+  "metadata": {
+    "agentName": "Grinta-PID-V11",
+    "agentType": "pid-governor",
+    "version": "11.0"
+  },
+  "txs": {
+    "mint": "0x451048a86473f8670ab782b0ecf6e1d35ce46ad9e9cb3d6bbc2e005f2e35700",
+    "metadata": "0x23f0e9f8753612d6517242cbc42a04beaa6a580cc48061380f423816470a8fc",
+    "bindWallet": "0x588606ccf911340d538be610aead443c92604d8cb5ee61272c7138db4a31591"
+  },
+  "tokenUri": "grinta-pid-v11",
+  "chainId": "0x534e5f5345504f4c4941",
+  "bindDetails": {
+    "deadline": "1777227931",
+    "nonceUsed": "0"
+  },
+  "timestamp": "2026-04-26T18:21:52.756Z"
+}

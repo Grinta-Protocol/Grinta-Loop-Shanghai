@@ -2,7 +2,8 @@ import express from "express";
 import cors from "cors";
 import { Account, RpcProvider, CallData, cairo, type Call } from "starknet";
 import OpenAI from "openai";
-import lighthouse from "@lighthouse-web3/sdk";
+// lighthouse SDK loaded lazily inside archiveToFilecoin so the server can
+// boot without the package installed (archive feature is opt-in via API key).
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -48,6 +49,49 @@ const deployer = new Account({ provider, address: CFG.DEPLOYER_ADDRESS, signer: 
 const agent = new Account({ provider, address: CFG.AGENT_ADDRESS, signer: CFG.AGENT_PRIVATE_KEY });
 const llm = new OpenAI({ apiKey: CFG.LLM_API_KEY, baseURL: CFG.LLM_BASE_URL });
 
+// ---- ERC-8004 Agent Identity (loaded once at startup from agent-identity.json) ----
+// Tier 1 result: NFT 36 minted on Sepolia IdentityRegistry, agent wallet bound
+// via SNIP-6, V12 Guard authorizes via registry lookup. The file is the
+// authoritative copy; if absent the server still runs (legacy mode) but
+// /api/identity will return null.
+type AgentIdentity = {
+  agentId: string;
+  agentIdDecimal: string;
+  identityRegistry: string;
+  owner: string;
+  boundWallet: string;
+  metadata: { agentName: string; agentType: string; version: string };
+  tokenUri?: string;
+  txs: Record<string, string>;
+  voyagerRegistryUrl: string;
+  voyagerNftSearchUrl: string;
+};
+
+let agentIdentity: AgentIdentity | null = null;
+
+(function loadIdentity() {
+  const file = join(__dirname, "..", "..", "agent-identity.json");
+  if (!existsSync(file)) {
+    console.log("[server] No agent-identity.json found — /api/identity disabled");
+    return;
+  }
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf-8"));
+    agentIdentity = {
+      ...raw,
+      voyagerRegistryUrl: `https://sepolia.voyager.online/contract/${raw.identityRegistry}`,
+      voyagerNftSearchUrl:
+        `https://sepolia.voyager.online/contract/${raw.identityRegistry}` +
+        `?tab=read#agent_exists`,
+    };
+    console.log(
+      `[server] Loaded ERC-8004 identity: agent_id=${raw.agentIdDecimal} (${raw.metadata.agentName})`
+    );
+  } catch (e: any) {
+    console.error("[server] Failed to parse agent-identity.json:", e.message);
+  }
+})();
+
 // ---- Lighthouse Filecoin Archive ----
 // Cache for IPNS name (reuse across sessions)
 const IPNS_CACHE_FILE = join(__dirname, "..", "lighthouse-ipns.json");
@@ -68,6 +112,14 @@ function saveIpnsName(ipnsName: string) {
 async function archiveToFilecoin(): Promise<{ cid: string; ipns: string; url: string } | null> {
   if (!CFG.LIGHTHOUSE_API_KEY) {
     log("LIGHTHOUSE_API_KEY not set — skipping Filecoin archive");
+    return null;
+  }
+
+  let lighthouse: any;
+  try {
+    lighthouse = (await import("@lighthouse-web3/sdk")).default;
+  } catch {
+    log("LIGHTHOUSE_API_KEY set but @lighthouse-web3/sdk not installed — skipping archive");
     return null;
   }
 
@@ -500,13 +552,22 @@ What is your decision? (Respond ONLY with valid JSON)`;
     { maxFee: 10n ** 16n },
   );
 
-  log(`Tx submitted: ${transaction_hash}`);
-  broadcast("tx", { hash: transaction_hash, type: "propose_parameters" });
+  const agentIdLabel = agentIdentity ? ` agent_id=${agentIdentity.agentIdDecimal}` : "";
+  log(`Tx submitted:${agentIdLabel} ${transaction_hash}`);
+  broadcast("tx", {
+    hash: transaction_hash,
+    type: "propose_parameters",
+    agentId: agentIdentity?.agentIdDecimal ?? null,
+  });
 
   await provider.waitForTransaction(transaction_hash);
   log("Tx confirmed!");
 
-  return { ...decision, txHash: transaction_hash };
+  return {
+    ...decision,
+    txHash: transaction_hash,
+    agentId: agentIdentity?.agentIdDecimal ?? null,
+  };
 }
 
 // ---- Tiny swap to trigger rate recalculation ----
@@ -573,6 +634,27 @@ async function triggerSwap() {
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ERC-8004 identity endpoint — used by the dashboard to render the agent's
+// NFT card. Returns null if no agent-identity.json was loaded at startup.
+app.get("/api/identity", (_req, res) => {
+  if (!agentIdentity) return res.status(404).json({ error: "agent identity not loaded" });
+  res.json({
+    agentId: agentIdentity.agentIdDecimal,
+    agentIdHex: agentIdentity.agentId,
+    name: agentIdentity.metadata.agentName,
+    agentType: agentIdentity.metadata.agentType,
+    version: agentIdentity.metadata.version,
+    boundWallet: agentIdentity.boundWallet,
+    owner: agentIdentity.owner,
+    identityRegistry: agentIdentity.identityRegistry,
+    tokenUri: agentIdentity.tokenUri || null,
+    voyagerRegistryUrl: agentIdentity.voyagerRegistryUrl,
+    txs: agentIdentity.txs,
+    standard: "ERC-8004",
+    network: "Starknet Sepolia",
+  });
+});
 
 app.get("/api/state", async (_req, res) => {
   try {

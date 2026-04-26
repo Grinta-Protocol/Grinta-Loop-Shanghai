@@ -178,7 +178,18 @@ export default function Governance() {
   const [showGraph, setShowGraph] = useState(false) // flip state
   const [isFirstVisit, setIsFirstVisit] = useState(true) // First visit onboarding
   const [decisionText, setDecisionText] = useState('')
+  const [identity, setIdentity] = useState(null)
   const logRef = useRef(null)
+
+  // ERC-8004 agent identity — fetched once at mount. The /api/identity
+  // endpoint reads agent-identity.json on the server (output of the Tier 1
+  // mint script) so we don't hit chain on every page load.
+  useEffect(() => {
+    fetch(`${API}/identity`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setIdentity)
+      .catch(() => setIdentity(null))
+  }, [])
 
   // Typewriter effect for decision
   useEffect(() => {
@@ -362,12 +373,31 @@ export default function Governance() {
             </div>
           </div>
           <div className="header-right">
-            <div className="network-badge marble-card">
-              <span className="pulse-dot">
-                <span className="pulse-dot-ping" />
-                <span className="pulse-dot-core" />
-              </span>
-              <span>Starknet Sepolia</span>
+            <div className="header-badges">
+              {identity && (
+                <a
+                  className="identity-badge marble-card"
+                  href={identity.voyagerRegistryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`ERC-8004 NFT bound to wallet ${identity.boundWallet.slice(0, 10)}…`}
+                >
+                  <span className="identity-icon">🪪</span>
+                  <span className="identity-text">
+                    <span className="identity-name mono">{identity.name}</span>
+                    <span className="identity-meta mono">
+                      ERC-8004 #{identity.agentId} · {identity.agentType}
+                    </span>
+                  </span>
+                </a>
+              )}
+              <div className="network-badge marble-card">
+                <span className="pulse-dot">
+                  <span className="pulse-dot-ping" />
+                  <span className="pulse-dot-core" />
+                </span>
+                <span>Starknet Sepolia</span>
+              </div>
             </div>
             <p className="powered-by">Powered by Reflecter Labs</p>
           </div>

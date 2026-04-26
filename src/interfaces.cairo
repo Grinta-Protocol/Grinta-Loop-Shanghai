@@ -9,3 +9,4 @@ pub mod iliquidation_engine;
 pub mod icollateral_auction_house;
 pub mod iaccounting_engine;
 pub mod iparameter_guard;
+pub mod iidentity_registry;
